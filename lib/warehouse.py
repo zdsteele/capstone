@@ -15,8 +15,11 @@ connector); pass a tuple/list.
 
 from __future__ import annotations
 
+import datetime as _dt
+import math
 import os
 import threading
+from decimal import Decimal
 
 CATALOG = os.environ.get("UC_CATALOG", "bootcamp_students")
 SCHEMA = os.environ.get("UC_SCHEMA", "zdsteele_capstone")
@@ -55,10 +58,25 @@ def _connection():
     return conn
 
 
+def _clean(v):
+    """Make a warehouse value JSON-safe: NaN/Inf -> None, Decimal -> float,
+    date/datetime -> isoformat string."""
+    if isinstance(v, float):
+        return v if math.isfinite(v) else None
+    if isinstance(v, Decimal):
+        f = float(v)
+        return f if math.isfinite(f) else None
+    if isinstance(v, (_dt.date, _dt.datetime)):
+        return v.isoformat()
+    return v
+
+
 def query(sql: str, params: tuple | list | None = None) -> list[dict]:
-    """Run a read query against the warehouse; return rows as list[dict]."""
+    """Run a read query against the warehouse; return rows as JSON-safe list[dict]."""
     conn = _connection()
     with conn.cursor() as cur:
         cur.execute(sql, params or [])
         cols = [c[0] for c in cur.description] if cur.description else []
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        return [
+            {c: _clean(v) for c, v in zip(cols, row)} for row in cur.fetchall()
+        ]

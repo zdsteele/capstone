@@ -36,6 +36,7 @@
 <script>
 const ACC = {{ accession | tojson }};
 (async () => {
+ try {
   const d = await getJSON(`/api/filing/${ACC}`);
   const f = d.filing || {};
   document.getElementById('f-title').textContent = `${f.form || ''} — ${f.cik || ''} — ${ACC}`;
@@ -74,6 +75,10 @@ const ACC = {{ accession | tojson }};
     '<tr><th>Concept</th><th>Period end</th><th>Unit</th><th>Value</th></tr>' +
     (d.facts || []).map(x => `<tr><td>${x.concept}</td><td>${x.period_end || ''}</td>
       <td>${x.unit}</td><td>${fmtNum(x.value)}</td></tr>`).join('');
+ } catch (err) {
+   document.getElementById('f-meta').innerHTML =
+     `<span class="error">Failed to load filing: ${err.message}</span>`;
+ }
 })();
 </script>
 {% endif %}
