@@ -54,12 +54,12 @@ else in it.
 
 | Source (`zdsteele-capstone` schema `edgar`) | Target (`bootcamp_students.zachy_zacharysteele8`) |
 |---|---|
-| `edgar.watchlists` | `lb_edgar_watchlists_history` |
-| `edgar.watchlist_companies` | `lb_edgar_watchlist_companies_history` |
-| `edgar.saved_filings` | `lb_edgar_saved_filings_history` |
-| `edgar.saved_research` | `lb_edgar_saved_research_history` |
-| `edgar.agent_conversations` | `lb_edgar_agent_conversations_history` |
-| `edgar.agent_actions` | `lb_edgar_agent_actions_history` |
+| `edgar.watchlists` | `lb_watchlists_history` |
+| `edgar.watchlist_companies` | `lb_watchlist_companies_history` |
+| `edgar.saved_filings` | `lb_saved_filings_history` |
+| `edgar.saved_research` | `lb_saved_research_history` |
+| `edgar.agent_conversations` | `lb_agent_conversations_history` |
+| `edgar.agent_actions` | `lb_agent_actions_history` |
 
 Rule: target name = `lb_edgar_` + table + `_history`. Snapshot or continuous
 mode both fine. (`companies` and `users` don't need syncing — not analytics
