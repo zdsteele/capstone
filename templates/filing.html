@@ -33,9 +33,13 @@
     </div>
   </div>
 </section>
+{% endif %}
+{% endblock %}
+
+{% block script %}
 <script>
 const ACC = {{ accession | tojson }};
-(async () => {
+if (ACC) (async () => {
  try {
   const d = await getJSON(`/api/filing/${ACC}`);
   const f = d.filing || {};
@@ -81,5 +85,4 @@ const ACC = {{ accession | tojson }};
  }
 })();
 </script>
-{% endif %}
 {% endblock %}
