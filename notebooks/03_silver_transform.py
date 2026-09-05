@@ -126,6 +126,19 @@ silver_financial_facts = (
         .when(F.col("fiscal_period").startswith("Q"), F.regexp_extract("fiscal_period", r"Q(\d)", 1).cast("int"))
         .otherwise(F.quarter("period_end")),
     )
+    # period_type — companyfacts reports the same concept at several durations for
+    # the same fiscal_period (3-month, 6/9-month YTD, 12-month). Classify by the
+    # start..end span so Gold can pick the right one (a "Q3" number should be the
+    # 3-month value, not the 9-month YTD).
+    .withColumn("duration_days", F.datediff("period_end", "period_start"))
+    .withColumn(
+        "period_type",
+        F.when(F.col("period_start").isNull(), F.lit("instant"))       # balance-sheet
+        .when(F.col("duration_days") <= 110, F.lit("quarter"))         # ~90-92
+        .when(F.col("duration_days") <= 200, F.lit("half"))            # ~180
+        .when(F.col("duration_days") <= 300, F.lit("ytd9"))            # ~270
+        .otherwise(F.lit("annual")),                                   # ~365
+    )
     # quality gates: non-null keys + numeric present + referential to a known filing
     .filter(
         F.col("cik").isNotNull()

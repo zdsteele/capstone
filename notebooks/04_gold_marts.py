@@ -68,17 +68,27 @@ companies = spark.table(T("silver_companies")).select("cik", "ticker", "name")
 resolved = (
     facts.join(metric_map, "concept")
     .filter(F.col("fiscal_period").isNotNull())
+    # Match the fact's period_type to what the fiscal_period label means, so a
+    # "Q3" figure is the discrete 3-month value, not the 9-month YTD or annual:
+    #   balance-sheet metrics -> 'instant'   |   FY -> 'annual'   |   Q1..Q4 -> 'quarter'
+    .withColumn(
+        "want_type",
+        F.when(F.col("statement") == "balance", F.lit("instant"))
+        .when(F.col("fiscal_period") == "FY", F.lit("annual"))
+        .otherwise(F.lit("quarter")),
+    )
+    .filter(F.col("period_type") == F.col("want_type"))
     .withColumn(
         "rn",
         F.row_number().over(
             Window.partitionBy("cik", "fiscal_year", "fiscal_period", "metric").orderBy(
-                F.col("priority").asc(), F.col("filed").desc()
+                F.col("priority").asc(), F.col("filed").desc(), F.col("period_end").desc()
             )
         ),
     )
     .filter(F.col("rn") == 1)
     .join(companies, "cik", "left_semi")  # referential check
-    .select("cik", "fiscal_year", "fiscal_period", "fiscal_quarter", "form",
+    .select("cik", "fiscal_year", "fiscal_period", "fiscal_quarter",
             "period_start", "period_end", "metric", "statement", "value")
 )
 # Materialize once as a Delta table instead of .cache() — serverless compute
@@ -90,11 +100,16 @@ print("resolved metric-values:", resolved.count())
 
 # COMMAND ----------
 
-# DBTITLE 1,gold_company_financials  (wide)
+# DBTITLE 1,gold_company_financials  (wide — one row per cik/fiscal_year/fiscal_period)
+period_end_of = (
+    resolved.groupBy("cik", "fiscal_year", "fiscal_period")
+    .agg(F.max("period_end").alias("period_end"))
+)
 wide = (
-    resolved.groupBy("cik", "fiscal_year", "fiscal_period", "fiscal_quarter", "form", "period_end")
+    resolved.groupBy("cik", "fiscal_year", "fiscal_period", "fiscal_quarter")
     .pivot("metric", list(CONCEPT_MAP.keys()))
-    .agg(F.first("value"))
+    .agg(F.first("value", ignorenulls=True))
+    .join(period_end_of, ["cik", "fiscal_year", "fiscal_period"])
     .join(companies, "cik")
 )
 wide.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(
@@ -109,13 +124,20 @@ rev = (
     wide.select("cik", "name", "ticker", "fiscal_year", "fiscal_period", "period_end", "revenue")
     .filter(F.col("revenue").isNotNull())
 )
-w_time = Window.partitionBy("cik").orderBy("period_end")
-w_year = Window.partitionBy("cik", "fiscal_period").orderBy("fiscal_year")
+# YoY: same fiscal_period a year earlier (Q3 vs Q3, FY vs FY).
+w_yoy = Window.partitionBy("cik", "fiscal_period").orderBy("fiscal_year")
+# QoQ: consecutive quarters only — compute on a quarterly-only frame, join back.
+w_qoq = Window.partitionBy("cik").orderBy("period_end")
+qoq = (
+    rev.filter(F.col("fiscal_period") != "FY")
+    .withColumn("prev_q_revenue", F.lag("revenue").over(w_qoq))
+    .select("cik", "fiscal_year", "fiscal_period", "prev_q_revenue")
+)
 rev_hist = (
-    rev.withColumn("prev_q_revenue", F.lag("revenue").over(w_time))
-    .withColumn("prev_y_revenue", F.lag("revenue").over(w_year))
-    .withColumn("qoq_pct", F.round((F.col("revenue") - F.col("prev_q_revenue")) / F.col("prev_q_revenue") * 100, 2))
-    .withColumn("yoy_pct", F.round((F.col("revenue") - F.col("prev_y_revenue")) / F.col("prev_y_revenue") * 100, 2))
+    rev.withColumn("prev_y_revenue", F.lag("revenue").over(w_yoy))
+    .join(qoq, ["cik", "fiscal_year", "fiscal_period"], "left")
+    .withColumn("yoy_pct", F.round((F.col("revenue") - F.col("prev_y_revenue")) / F.abs("prev_y_revenue") * 100, 2))
+    .withColumn("qoq_pct", F.round((F.col("revenue") - F.col("prev_q_revenue")) / F.abs("prev_q_revenue") * 100, 2))
 )
 rev_hist.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(
     T("gold_revenue_history")
@@ -134,7 +156,7 @@ for stmt, table in [
         resolved.filter(F.col("statement") == stmt)
         .join(companies, "cik")
         .select("cik", "name", "ticker", "fiscal_year", "fiscal_period", "fiscal_quarter",
-                "period_start", "period_end", "form", "metric", "value")
+                "period_start", "period_end", "metric", "value")
     )
     df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(T(table))
     print(f"{table}:", df.count())
@@ -155,10 +177,15 @@ print("gold_filing_activity:", activity.count())
 
 # COMMAND ----------
 
-# DBTITLE 1,gold_company_comparisons  (latest value per metric, cross-company)
+# DBTITLE 1,gold_company_comparisons  (latest comparable value per metric)
+# Flow metrics: compare the latest discrete quarter (drop FY so we don't put an
+# annual figure next to a quarterly one). Balance metrics: latest instant.
+cmp_src = resolved.filter(
+    (F.col("statement") == "balance") | (F.col("fiscal_period") != "FY")
+)
 w_latest = Window.partitionBy("cik", "metric").orderBy(F.col("period_end").desc())
 comparisons = (
-    resolved.withColumn("rn", F.row_number().over(w_latest))
+    cmp_src.withColumn("rn", F.row_number().over(w_latest))
     .filter(F.col("rn") == 1)
     .join(companies, "cik")
     .select("cik", "name", "ticker", "metric", "statement",
