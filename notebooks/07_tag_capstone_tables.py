@@ -6,7 +6,7 @@
 # MAGIC %md
 # MAGIC # 07 · Tag the capstone tables in Unity Catalog
 # MAGIC
-# MAGIC The medallion tables share `bootcamp_students.zachy_zacharysteele8` with
+# MAGIC The medallion tables share `bootcamp_students.zdsteele_capstone` with
 # MAGIC other bootcamp work. UC has no table "colors", but tags + comments make the
 # MAGIC capstone tables easy to spot and filter:
 # MAGIC
@@ -20,7 +20,7 @@
 # COMMAND ----------
 
 dbutils.widgets.text("catalog", "bootcamp_students")
-dbutils.widgets.text("schema", "zachy_zacharysteele8")
+dbutils.widgets.text("schema", "zdsteele_capstone")
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 FQ = f"{CATALOG}.{SCHEMA}"

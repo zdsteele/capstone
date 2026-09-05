@@ -21,7 +21,7 @@ import json
 import datetime as dt
 
 dbutils.widgets.text("catalog", "bootcamp_students")
-dbutils.widgets.text("schema", "zachy_zacharysteele8")
+dbutils.widgets.text("schema", "zdsteele_capstone")
 dbutils.widgets.text("ciks_config", "../config/ciks.json")
 dbutils.widgets.text("period", "10y")
 

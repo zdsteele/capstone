@@ -15,7 +15,7 @@ SEC EDGAR (Submissions API, XBRL companyfacts, filing archives, full .txt)
 yfinance daily bars
         │  rate-limited PySpark ingestion (lib/sec_client.py)
         ▼
-Bronze Delta  bootcamp_students.zachy_zacharysteele8.bronze_*   + Volume bronze_edgar_raw
+Bronze Delta  bootcamp_students.zdsteele_capstone.bronze_*   + Volume bronze_edgar_raw
         ▼  parse XBRL facts, HTML → sections, chunk text, entity-resolve
 Silver Delta  silver_companies / silver_filings / silver_financial_facts / silver_filing_sections / silver_filing_text_chunks
         ▼  GAAP concepts → metrics, YoY/QoQ
@@ -61,10 +61,10 @@ app.yaml, databricks.yml   deploy config
 ## Setup (summary — full runbook in `docs/SETUP.md`)
 
 1. Run `sql/00`–`20` in the Lakebase **SQL Editor** (tables `edgar.*`).
-2. Run notebooks `01`→`04` (widgets default to `bootcamp_students` / `zachy_zacharysteele8`).
+2. Run notebooks `01`→`04` (widgets default to `bootcamp_students` / `zdsteele_capstone`).
    `05` is optional (keyword search by default).
 3. Set up **reverse** CDC only: the 6 `edgar.*` tables →
-   `bootcamp_students.zachy_zacharysteele8.lb_*_history`. Forward reads go through the
+   `bootcamp_students.zdsteele_capstone.lb_*_history`. Forward reads go through the
    warehouse — nothing to create.
 4. `cp .env.example .env` (paste the Lakebase Connect string + OAuth token),
    `pip install -r requirements.txt`, `python app.py`.

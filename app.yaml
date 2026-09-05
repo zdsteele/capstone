@@ -19,7 +19,7 @@ env:
   - name: UC_CATALOG
     value: "bootcamp_students"
   - name: UC_SCHEMA
-    value: "zachy_zacharysteele8"
+    value: "zdsteele_capstone"
 
   # Foundation model for the in-process agent
   - name: LLM_ENDPOINT

@@ -11,7 +11,7 @@ Known values for this workspace:
 | Lakebase host | from the `zdsteele-capstone` Connect dialog (send it to me for `.env`) |
 | Lakebase Postgres schema | `edgar` (clean, unprefixed table names) |
 | SQL warehouse | `Serverless Starter Warehouse`, id `b15d3d6f837ba428` |
-| Unity Catalog schema | `bootcamp_students.zachy_zacharysteele8` (Delta medallion tables — your bootcamp schema) |
+| Unity Catalog schema | `bootcamp_students.zdsteele_capstone` (Delta medallion tables — your bootcamp schema) |
 | Vector Search | not used (keyword search); `zachy_vs` exists if you want it later |
 | LLM endpoint | `databricks-meta-llama-3-3-70b-instruct` |
 
@@ -29,11 +29,11 @@ Tables: `edgar.users`, `edgar.companies`, `edgar.watchlists`,
 `edgar.watchlist_companies`, `edgar.saved_filings`, `edgar.saved_research`,
 `edgar.agent_conversations`, `edgar.agent_actions`.
 
-## 2. Pipeline notebooks — Unity Catalog `bootcamp_students.zachy_zacharysteele8`
+## 2. Pipeline notebooks — Unity Catalog `bootcamp_students.zdsteele_capstone`
 
 Import the repo as a **Git folder** in Databricks, then run `notebooks/` in
 order on a serverless cluster. Widgets already default to
-`catalog=bootcamp_students`, `schema=zachy_zacharysteele8`.
+`catalog=bootcamp_students`, `schema=zdsteele_capstone`.
 
 | Run | Notebook | Output |
 |---|---|---|
@@ -52,7 +52,7 @@ history tables so the analytics job can read them. Because `zdsteele-capstone` i
 your own instance, syncing the whole `edgar` schema is fine — there's nothing
 else in it.
 
-| Source (`zdsteele-capstone` schema `edgar`) | Target (`bootcamp_students.zachy_zacharysteele8`) |
+| Source (`zdsteele-capstone` schema `edgar`) | Target (`bootcamp_students.zdsteele_capstone`) |
 |---|---|
 | `edgar.watchlists` | `lb_watchlists_history` |
 | `edgar.watchlist_companies` | `lb_watchlist_companies_history` |
@@ -126,7 +126,7 @@ sync needed.
 Edit `config/ciks.json` to ≥ 100 companies, re-run notebooks `01`→`06`, then:
 
 ```sql
-SELECT COUNT(*) FROM bootcamp_students.zachy_zacharysteele8.silver_financial_facts;  -- want > 1,000,000
+SELECT COUNT(*) FROM bootcamp_students.zdsteele_capstone.silver_financial_facts;  -- want > 1,000,000
 ```
 
 Variety is already satisfied (JSON submissions + HTML filings + XBRL + full

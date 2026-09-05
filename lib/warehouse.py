@@ -19,7 +19,7 @@ import os
 import threading
 
 CATALOG = os.environ.get("UC_CATALOG", "bootcamp_students")
-SCHEMA = os.environ.get("UC_SCHEMA", "zachy_zacharysteele8")
+SCHEMA = os.environ.get("UC_SCHEMA", "zdsteele_capstone")
 WAREHOUSE_ID = os.environ.get("DATABRICKS_WAREHOUSE_ID", "b15d3d6f837ba428")
 HTTP_PATH = os.environ.get("DATABRICKS_HTTP_PATH", f"/sql/1.0/warehouses/{WAREHOUSE_ID}")
 

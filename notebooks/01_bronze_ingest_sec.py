@@ -33,7 +33,7 @@ if _repo_root not in sys.path:
 from lib.sec_client import SecClient, cik10, accession_nodash, iter_recent_filings
 
 dbutils.widgets.text("catalog", "bootcamp_students")
-dbutils.widgets.text("schema", "zachy_zacharysteele8")
+dbutils.widgets.text("schema", "zdsteele_capstone")
 dbutils.widgets.text("ciks_config", "../config/ciks.json")
 dbutils.widgets.text("max_filings_per_cik", "40")
 dbutils.widgets.text(
