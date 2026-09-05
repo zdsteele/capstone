@@ -97,8 +97,10 @@ PROMPT = (
     "- primary_strength / primary_risk / key_metric_next_quarter: one sentence each.\n\n"
 )
 
+# ai_query responseFormat DDL allows exactly ONE top-level field — nest the
+# 20-field object under `r`.
 RESPONSE_DDL = (
-    "STRUCT<"
+    "STRUCT<r: STRUCT<"
     "scores: STRUCT<growth_quality: INT, profitability: INT, cash_generation: INT, "
     "balance_sheet: INT, capital_allocation: INT, capital_efficiency: INT, financial_health: INT>, "
     "overall_score: INT, overall_label: STRING, direction: STRING, "
@@ -106,7 +108,8 @@ RESPONSE_DDL = (
     "debt_check: STRING, shareholder_check: STRING, accounting_check: STRING, "
     "management_says: STRING, risks: ARRAY<STRING>, bull_case: STRING, base_case: STRING, "
     "bear_case: STRING, watch_next: ARRAY<STRING>, bottom_line: STRING, "
-    "primary_strength: STRING, primary_risk: STRING, key_metric_next_quarter: STRING>"
+    "primary_strength: STRING, primary_risk: STRING, key_metric_next_quarter: STRING"
+    ">>"
 )
 
 prompt_rows = []
@@ -131,36 +134,36 @@ print("companies to score:", pdf.count())
 # COMMAND ----------
 
 # DBTITLE 1,ai_query with responseFormat -> gold_company_health
-# responseFormat as a STRUCT DDL forces the model to emit exactly this shape
-# (valid, no markdown fences, arrays where arrays belong) — ai_query returns the
-# struct directly, so no from_json / regex cleanup needed.
+# responseFormat (nested STRUCT DDL) forces the model to emit exactly this shape
+# — valid JSON, no markdown fences, arrays where arrays belong. ai_query returns
+# the struct; the real object is under `.r`.
 scored = pdf.withColumn(
     "p", F.expr(f"ai_query('{LLM}', prompt, responseFormat => '{RESPONSE_DDL}')")
-).withColumn("raw", F.to_json("p"))
+).withColumn("raw", F.to_json("p.r"))
 
 parsed = (
     scored.select(
         "cik", "ticker", "name",
-        F.col("p.overall_score").alias("overall_score"),
-        F.col("p.overall_label").alias("overall_label"),
-        F.col("p.direction").alias("direction"),
-        F.col("p.scores").alias("scores"),
-        F.col("p.what_changed").alias("what_changed"),
-        F.col("p.numbers_that_matter").alias("numbers_that_matter"),
-        F.col("p.cash_check").alias("cash_check"),
-        F.col("p.debt_check").alias("debt_check"),
-        F.col("p.shareholder_check").alias("shareholder_check"),
-        F.col("p.accounting_check").alias("accounting_check"),
-        F.col("p.management_says").alias("management_says"),
-        F.col("p.risks").alias("risks"),
-        F.col("p.bull_case").alias("bull_case"),
-        F.col("p.base_case").alias("base_case"),
-        F.col("p.bear_case").alias("bear_case"),
-        F.col("p.watch_next").alias("watch_next"),
-        F.col("p.bottom_line").alias("bottom_line"),
-        F.col("p.primary_strength").alias("primary_strength"),
-        F.col("p.primary_risk").alias("primary_risk"),
-        F.col("p.key_metric_next_quarter").alias("key_metric_next_quarter"),
+        F.col("p.r.overall_score").alias("overall_score"),
+        F.col("p.r.overall_label").alias("overall_label"),
+        F.col("p.r.direction").alias("direction"),
+        F.col("p.r.scores").alias("scores"),
+        F.col("p.r.what_changed").alias("what_changed"),
+        F.col("p.r.numbers_that_matter").alias("numbers_that_matter"),
+        F.col("p.r.cash_check").alias("cash_check"),
+        F.col("p.r.debt_check").alias("debt_check"),
+        F.col("p.r.shareholder_check").alias("shareholder_check"),
+        F.col("p.r.accounting_check").alias("accounting_check"),
+        F.col("p.r.management_says").alias("management_says"),
+        F.col("p.r.risks").alias("risks"),
+        F.col("p.r.bull_case").alias("bull_case"),
+        F.col("p.r.base_case").alias("base_case"),
+        F.col("p.r.bear_case").alias("bear_case"),
+        F.col("p.r.watch_next").alias("watch_next"),
+        F.col("p.r.bottom_line").alias("bottom_line"),
+        F.col("p.r.primary_strength").alias("primary_strength"),
+        F.col("p.r.primary_risk").alias("primary_risk"),
+        F.col("p.r.key_metric_next_quarter").alias("key_metric_next_quarter"),
         F.lit(LLM).alias("model"),
         F.current_timestamp().alias("generated_at"),
         F.col("raw"),
