@@ -1,4 +1,8 @@
-# Databricks App runtime + in-process agent
+# Databricks App runtime + in-process agent — kept lean so pip can resolve it.
+# (databricks-langchain was dropped: it pulls openai-agents / mcp / databricks-openai
+#  and blows up pip's resolver. We call the LLM via the serving endpoint's
+#  OpenAI-compatible API with langchain-openai instead.)
+
 flask>=3.0.3
 psycopg2-binary>=2.9.9
 databricks-sdk>=0.40.0
@@ -7,16 +11,13 @@ requests>=2.32.3
 python-dotenv>=1.0.1
 
 # In-process LangGraph agent
-databricks-langchain>=0.16.1
-langchain>=1.0.0
-langchain-core>=1.0.0
-langgraph>=1.0.0
-mlflow>=3.0.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langgraph>=0.2.0
 
 # Filing parsing (also used by the Spark notebooks)
 beautifulsoup4>=4.12.0
 lxml>=5.2.0
-langchain-text-splitters>=1.0.0
 
 # Market data enrichment
 yfinance>=0.2.40
