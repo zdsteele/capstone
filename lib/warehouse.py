@@ -16,6 +16,7 @@ connector); pass a tuple/list.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import math
 import os
 import threading
@@ -60,7 +61,8 @@ def _connection():
 
 def _clean(v):
     """Make a warehouse value JSON-safe: NaN/Inf -> None, Decimal -> float,
-    date/datetime -> isoformat string."""
+    date/datetime -> isoformat, and ARRAY/STRUCT/MAP columns (which the connector
+    hands back as JSON strings when pyarrow is absent) -> parsed Python objects."""
     if isinstance(v, float):
         return v if math.isfinite(v) else None
     if isinstance(v, Decimal):
@@ -68,6 +70,11 @@ def _clean(v):
         return f if math.isfinite(f) else None
     if isinstance(v, (_dt.date, _dt.datetime)):
         return v.isoformat()
+    if isinstance(v, str) and len(v) >= 2 and v[0] in "[{" and v[-1] in "]}":
+        try:
+            return json.loads(v)
+        except Exception:
+            return v
     return v
 
 
