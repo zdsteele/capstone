@@ -97,20 +97,30 @@ PROMPT = (
     "- primary_strength / primary_risk / key_metric_next_quarter: one sentence each.\n\n"
 )
 
-# ai_query responseFormat DDL allows exactly ONE top-level field — nest the
-# 20-field object under `r`.
-RESPONSE_DDL = (
-    "STRUCT<r: STRUCT<"
-    "scores: STRUCT<growth_quality: INT, profitability: INT, cash_generation: INT, "
-    "balance_sheet: INT, capital_allocation: INT, capital_efficiency: INT, financial_health: INT>, "
-    "overall_score: INT, overall_label: STRING, direction: STRING, "
-    "what_changed: ARRAY<STRING>, numbers_that_matter: STRING, cash_check: STRING, "
-    "debt_check: STRING, shareholder_check: STRING, accounting_check: STRING, "
-    "management_says: STRING, risks: ARRAY<STRING>, bull_case: STRING, base_case: STRING, "
-    "bear_case: STRING, watch_next: ARRAY<STRING>, bottom_line: STRING, "
-    "primary_strength: STRING, primary_risk: STRING, key_metric_next_quarter: STRING"
-    ">>"
-)
+HEALTH_SCHEMA = StructType([
+    StructField("scores", StructType([StructField(k, IntegerType()) for k in [
+        "growth_quality", "profitability", "cash_generation", "balance_sheet",
+        "capital_allocation", "capital_efficiency", "financial_health"]])),
+    StructField("overall_score", IntegerType()),
+    StructField("overall_label", StringType()),
+    StructField("direction", StringType()),
+    StructField("what_changed", ArrayType(StringType())),
+    StructField("numbers_that_matter", StringType()),
+    StructField("cash_check", StringType()),
+    StructField("debt_check", StringType()),
+    StructField("shareholder_check", StringType()),
+    StructField("accounting_check", StringType()),
+    StructField("management_says", StringType()),
+    StructField("risks", ArrayType(StringType())),
+    StructField("bull_case", StringType()),
+    StructField("base_case", StringType()),
+    StructField("bear_case", StringType()),
+    StructField("watch_next", ArrayType(StringType())),
+    StructField("bottom_line", StringType()),
+    StructField("primary_strength", StringType()),
+    StructField("primary_risk", StringType()),
+    StructField("key_metric_next_quarter", StringType()),
+])
 
 prompt_rows = []
 for co in companies:
@@ -133,37 +143,38 @@ print("companies to score:", pdf.count())
 
 # COMMAND ----------
 
-# DBTITLE 1,ai_query with responseFormat -> gold_company_health
-# responseFormat (nested STRUCT DDL) forces the model to emit exactly this shape
-# — valid JSON, no markdown fences, arrays where arrays belong. ai_query returns
-# the struct; the real object is under `.r`.
+# DBTITLE 1,ai_query (json_object) -> parse -> gold_company_health
+# responseFormat 'json_object' guarantees a single valid JSON object (no markdown
+# fences, escaped newlines). Then from_json with the flat schema — arrays where
+# arrays belong so a list value doesn't null the row.
 scored = pdf.withColumn(
-    "p", F.expr(f"ai_query('{LLM}', prompt, responseFormat => '{RESPONSE_DDL}')")
-).withColumn("raw", F.to_json("p.r"))
+    "raw", F.expr(f"ai_query('{LLM}', prompt, responseFormat => 'json_object')")
+)
 
 parsed = (
-    scored.select(
+    scored.withColumn("p", F.from_json("raw", HEALTH_SCHEMA))
+    .select(
         "cik", "ticker", "name",
-        F.col("p.r.overall_score").alias("overall_score"),
-        F.col("p.r.overall_label").alias("overall_label"),
-        F.col("p.r.direction").alias("direction"),
-        F.col("p.r.scores").alias("scores"),
-        F.col("p.r.what_changed").alias("what_changed"),
-        F.col("p.r.numbers_that_matter").alias("numbers_that_matter"),
-        F.col("p.r.cash_check").alias("cash_check"),
-        F.col("p.r.debt_check").alias("debt_check"),
-        F.col("p.r.shareholder_check").alias("shareholder_check"),
-        F.col("p.r.accounting_check").alias("accounting_check"),
-        F.col("p.r.management_says").alias("management_says"),
-        F.col("p.r.risks").alias("risks"),
-        F.col("p.r.bull_case").alias("bull_case"),
-        F.col("p.r.base_case").alias("base_case"),
-        F.col("p.r.bear_case").alias("bear_case"),
-        F.col("p.r.watch_next").alias("watch_next"),
-        F.col("p.r.bottom_line").alias("bottom_line"),
-        F.col("p.r.primary_strength").alias("primary_strength"),
-        F.col("p.r.primary_risk").alias("primary_risk"),
-        F.col("p.r.key_metric_next_quarter").alias("key_metric_next_quarter"),
+        F.col("p.overall_score").alias("overall_score"),
+        F.col("p.overall_label").alias("overall_label"),
+        F.col("p.direction").alias("direction"),
+        F.col("p.scores").alias("scores"),
+        F.col("p.what_changed").alias("what_changed"),
+        F.col("p.numbers_that_matter").alias("numbers_that_matter"),
+        F.col("p.cash_check").alias("cash_check"),
+        F.col("p.debt_check").alias("debt_check"),
+        F.col("p.shareholder_check").alias("shareholder_check"),
+        F.col("p.accounting_check").alias("accounting_check"),
+        F.col("p.management_says").alias("management_says"),
+        F.col("p.risks").alias("risks"),
+        F.col("p.bull_case").alias("bull_case"),
+        F.col("p.base_case").alias("base_case"),
+        F.col("p.bear_case").alias("bear_case"),
+        F.col("p.watch_next").alias("watch_next"),
+        F.col("p.bottom_line").alias("bottom_line"),
+        F.col("p.primary_strength").alias("primary_strength"),
+        F.col("p.primary_risk").alias("primary_risk"),
+        F.col("p.key_metric_next_quarter").alias("key_metric_next_quarter"),
         F.lit(LLM).alias("model"),
         F.current_timestamp().alias("generated_at"),
         F.col("raw"),
