@@ -10,10 +10,12 @@ databricks-sql-connector>=3.4.0
 requests>=2.32.3
 python-dotenv>=1.0.1
 
-# In-process LangGraph agent
-langchain-core>=0.3.0
-langchain-openai>=0.2.0
-langgraph>=0.2.0
+# In-process LangGraph agent. databricks-langchain is PINNED — newer releases
+# pull openai-agents / mcp / databricks-openai and blow up pip's resolver.
+databricks-langchain==0.16.1
+langchain-core>=0.3.0,<0.4
+langgraph>=0.2.40,<0.4
+mlflow-skinny>=2.15
 
 # Filing parsing (also used by the Spark notebooks)
 beautifulsoup4>=4.12.0

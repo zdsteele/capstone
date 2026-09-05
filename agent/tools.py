@@ -408,6 +408,11 @@ def build_tools(ctx: ToolContext) -> list:
                 [accession],
             )
             m = meta[0] if meta and "_error" not in meta[0] else {}
+            if not m.get("cik"):
+                return (
+                    f"'{accession}' is not a known filing. Call search_filings first "
+                    "to get a real accession number, then save that."
+                )
             rows = lakebase.run_write(
                 """
                 INSERT INTO edgar.saved_filings

@@ -32,31 +32,12 @@ class AgentState(TypedDict):
 
 
 def _llm():
-    """LLM via the Databricks serving endpoint's OpenAI-compatible API.
+    """LLM via ChatDatabricks (databricks-langchain, pinned) — it parses the
+    Databricks/Llama tool-call format correctly, which raw ChatOpenAI against the
+    endpoint does not (Llama emits `<function=...>` text instead of tool_calls)."""
+    from databricks_langchain import ChatDatabricks
 
-    Uses langchain-openai (tiny) instead of databricks-langchain (which pulls a
-    huge, hard-to-resolve dep tree). A fresh token is minted per call from the
-    ambient identity (CLI/SP), so long-lived processes don't hit expiry.
-    """
-    from langchain_openai import ChatOpenAI
-
-    try:
-        from databricks.sdk.core import Config
-
-        cfg = Config()
-        host = cfg.host.rstrip("/")
-        token = cfg.authenticate()["Authorization"].split(" ", 1)[1]
-    except Exception:  # local dev fallback to explicit env
-        host = os.environ["DATABRICKS_HOST"].rstrip("/")
-        token = os.environ.get("DATABRICKS_TOKEN", "")
-
-    return ChatOpenAI(
-        model=LLM_ENDPOINT,
-        base_url=f"{host}/serving-endpoints",
-        api_key=token,
-        temperature=0.1,
-        max_retries=2,
-    )
+    return ChatDatabricks(endpoint=LLM_ENDPOINT, temperature=0.1)
 
 
 def build_graph(ctx: ToolContext):
