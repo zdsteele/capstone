@@ -14,6 +14,14 @@ import logging
 import os
 import re
 
+# Load .env for local dev BEFORE importing lib.* (they read os.environ at import).
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    pass
+
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
 from lib import lakebase, warehouse
