@@ -137,8 +137,9 @@ async function loadHealth(cik) {
       <td>${fmtUSD(r.net_debt)} ${trendMark(r.net_debt_trend)}</td></tr>`).join('') + '</table>';
 
   const sec = (t, v) => v ? `<h3>${t}</h3><div class="report">${(v || '').replace(/\n/g, '<br>')}</div>` : '';
+  const list = (t, arr) => (arr && arr.length) ? `<h3>${t}</h3><ul>${arr.map(x => `<li>${x}</li>`).join('')}</ul>` : '';
   document.getElementById('h-report').innerHTML =
-    sec('What changed', h.what_changed) + sec('Cash check', h.cash_check) +
+    list('What changed', h.what_changed) + sec('Cash check', h.cash_check) +
     sec('Debt check', h.debt_check) + sec('Shareholder check', h.shareholder_check) +
     sec('Accounting check', h.accounting_check) +
     sec('What management is saying', h.management_says) +

@@ -80,26 +80,33 @@ PROMPT = (
     "You are a senior equity research analyst. Analyze the company below using ONLY "
     "the figures provided (they were computed from its SEC filings — do not invent "
     "any number; if something is missing say so). Separate reported facts, "
-    "calculated metrics, management statements, and your interpretation.\n\n"
-    "Respond with ONLY one JSON object, keys:\n"
-    '  scores: object with integer 0-100 for growth_quality, profitability, '
-    "cash_generation, balance_sheet, capital_allocation, capital_efficiency, "
-    "financial_health\n"
-    "  overall_score: integer 0-100\n"
-    '  overall_label: one of "Strong","Healthy","Mixed","Weak","Distressed"\n'
-    '  direction: one of "Improving","Stable","Deteriorating"\n'
-    "  what_changed: 3-5 bullet lines, why each matters\n"
-    "  numbers_that_matter: short markdown table (metric | latest | prior yr | trend)\n"
-    '  cash_check: how much real cash the business produces; FCF & conversion\n'
-    '  debt_check: liquidity, leverage, coverage\n'
-    '  shareholder_check: dilution / ROIC / capital allocation (note what data is missing)\n'
-    '  accounting_check: 1-3 lines, prefix each finding with GREEN / YELLOW / RED\n'
-    '  management_says: claims from the briefings, then whether the numbers support them\n'
-    "  risks: array of 3-5 measurable risk strings\n"
-    "  bull_case, base_case, bear_case: one paragraph each\n"
-    "  watch_next: array of 3-5 strings, each a specific metric + threshold\n"
-    "  bottom_line: 150-250 words, plain language\n"
-    "  primary_strength, primary_risk, key_metric_next_quarter: one sentence each\n\n"
+    "calculated metrics, management statements, and your interpretation. Fill every "
+    "field of the required structure:\n"
+    "- scores.*: integers 0-100.  overall_score: integer 0-100.\n"
+    '- overall_label: "Strong" | "Healthy" | "Mixed" | "Weak" | "Distressed".\n'
+    '- direction: "Improving" | "Stable" | "Deteriorating".\n'
+    "- what_changed: 3-5 short strings, each a development + why it matters.\n"
+    "- numbers_that_matter: one plain-text block, 'metric: latest vs prior-yr (trend)' per line.\n"
+    "- cash_check / debt_check / shareholder_check: 2-4 sentences each; note any missing data.\n"
+    "- accounting_check: 1-3 short findings, each prefixed GREEN / YELLOW / RED.\n"
+    "- management_says: management's claims, then whether the numbers support them.\n"
+    "- risks: 3-5 short measurable risk strings.\n"
+    "- bull_case / base_case / bear_case: one short paragraph each.\n"
+    "- watch_next: 3-5 strings, each a specific metric + threshold.\n"
+    "- bottom_line: 120-220 words, plain language.\n"
+    "- primary_strength / primary_risk / key_metric_next_quarter: one sentence each.\n\n"
+)
+
+RESPONSE_DDL = (
+    "STRUCT<"
+    "scores: STRUCT<growth_quality: INT, profitability: INT, cash_generation: INT, "
+    "balance_sheet: INT, capital_allocation: INT, capital_efficiency: INT, financial_health: INT>, "
+    "overall_score: INT, overall_label: STRING, direction: STRING, "
+    "what_changed: ARRAY<STRING>, numbers_that_matter: STRING, cash_check: STRING, "
+    "debt_check: STRING, shareholder_check: STRING, accounting_check: STRING, "
+    "management_says: STRING, risks: ARRAY<STRING>, bull_case: STRING, base_case: STRING, "
+    "bear_case: STRING, watch_next: ARRAY<STRING>, bottom_line: STRING, "
+    "primary_strength: STRING, primary_risk: STRING, key_metric_next_quarter: STRING>"
 )
 
 prompt_rows = []
@@ -123,39 +130,16 @@ print("companies to score:", pdf.count())
 
 # COMMAND ----------
 
-# DBTITLE 1,ai_query -> parse -> gold_company_health
-scored = pdf.withColumn("raw", F.expr(f"ai_query('{LLM}', prompt)"))
-
-scores_t = StructType([StructField(k, IntegerType()) for k in [
-    "growth_quality", "profitability", "cash_generation", "balance_sheet",
-    "capital_allocation", "capital_efficiency", "financial_health"]])
-schema = StructType([
-    StructField("scores", scores_t),
-    StructField("overall_score", IntegerType()),
-    StructField("overall_label", StringType()),
-    StructField("direction", StringType()),
-    StructField("what_changed", StringType()),
-    StructField("numbers_that_matter", StringType()),
-    StructField("cash_check", StringType()),
-    StructField("debt_check", StringType()),
-    StructField("shareholder_check", StringType()),
-    StructField("accounting_check", StringType()),
-    StructField("management_says", StringType()),
-    StructField("risks", ArrayType(StringType())),
-    StructField("bull_case", StringType()),
-    StructField("base_case", StringType()),
-    StructField("bear_case", StringType()),
-    StructField("watch_next", ArrayType(StringType())),
-    StructField("bottom_line", StringType()),
-    StructField("primary_strength", StringType()),
-    StructField("primary_risk", StringType()),
-    StructField("key_metric_next_quarter", StringType()),
-])
+# DBTITLE 1,ai_query with responseFormat -> gold_company_health
+# responseFormat as a STRUCT DDL forces the model to emit exactly this shape
+# (valid, no markdown fences, arrays where arrays belong) — ai_query returns the
+# struct directly, so no from_json / regex cleanup needed.
+scored = pdf.withColumn(
+    "p", F.expr(f"ai_query('{LLM}', prompt, responseFormat => '{RESPONSE_DDL}')")
+).withColumn("raw", F.to_json("p"))
 
 parsed = (
-    scored.withColumn("json_str", F.regexp_extract("raw", r"\{[\s\S]*\}", 0))
-    .withColumn("p", F.from_json("json_str", schema))
-    .select(
+    scored.select(
         "cik", "ticker", "name",
         F.col("p.overall_score").alias("overall_score"),
         F.col("p.overall_label").alias("overall_label"),
