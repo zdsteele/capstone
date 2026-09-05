@@ -4,7 +4,7 @@
 --
 -- Every table gets REPLICA IDENTITY FULL so Lakebase logical replication emits
 -- full before/after row images for the reverse-CDF analytics pipeline (lands as
--- bootcamp_students.zachy_zacharysteele8.lb_edgar_*_history in Unity Catalog).
+-- bootcamp_students.zdsteele_capstone.lb_<table>_history in Unity Catalog).
 --
 -- Run after 00_create_schema.sql, connected as your own identity (REPLICA
 -- IDENTITY is owner-only DDL).
