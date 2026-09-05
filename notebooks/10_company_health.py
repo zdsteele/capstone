@@ -99,6 +99,9 @@ PROMPT = (
     "- watch_next: array of 3-5 strings, each a specific metric + threshold\n"
     "- bottom_line: string, 120-220 words, plain language\n"
     "- primary_strength, primary_risk, key_metric_next_quarter: string, one sentence each\n\n"
+    "Assess COMPANY QUALITY only. Do NOT give a Buy/Sell/Hold recommendation, a "
+    "price target, or an expected return — no 'X% upside', no 'good investment'. "
+    "Keep company health separate from stock valuation.\n\n"
 )
 
 HEALTH_SCHEMA = StructType([
