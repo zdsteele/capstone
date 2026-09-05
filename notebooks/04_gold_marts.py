@@ -81,7 +81,11 @@ resolved = (
     .select("cik", "fiscal_year", "fiscal_period", "fiscal_quarter", "form",
             "period_start", "period_end", "metric", "statement", "value")
 )
-resolved.cache()
+# Materialize once as a Delta table instead of .cache() — serverless compute
+# rejects PERSIST/CACHE. Downstream marts read from this.
+(resolved.write.format("delta").mode("overwrite").option("overwriteSchema", "true")
+ .saveAsTable(T("silver_resolved_metrics")))
+resolved = spark.table(T("silver_resolved_metrics"))
 print("resolved metric-values:", resolved.count())
 
 # COMMAND ----------
