@@ -249,9 +249,46 @@ def api_filing(accession):
         """,
         [accession],
     )
+    try:
+        intel = warehouse.query(
+            f"""
+            SELECT executive_summary, revenue_commentary, risk_themes,
+                   management_tone, notable_items, model, generated_at
+            FROM {T('gold_filing_intelligence')} WHERE accession = ?
+            """,
+            [accession],
+        )
+    except Exception:
+        intel = []
     return jsonify(
-        {"filing": filing[0] if filing else None, "sections": sections, "exhibits": exhibits, "facts": facts}
+        {
+            "filing": filing[0] if filing else None,
+            "intelligence": intel[0] if intel else None,
+            "sections": sections,
+            "exhibits": exhibits,
+            "facts": facts,
+        }
     )
+
+
+@app.route("/api/intelligence")
+def api_intelligence():
+    _require_user()
+    ticker = (request.args.get("ticker") or "").strip().upper()
+    try:
+        rows = warehouse.query(
+            f"""
+            SELECT accession, ticker, form, filing_date, management_tone,
+                   executive_summary, risk_themes
+            FROM {T('gold_filing_intelligence')}
+            WHERE (? = '' OR upper(ticker) = ?)
+            ORDER BY filing_date DESC LIMIT 40
+            """,
+            [ticker, ticker],
+        )
+    except Exception as exc:
+        return jsonify({"briefings": [], "note": f"run notebook 08 first: {exc}"})
+    return jsonify({"briefings": rows})
 
 
 @app.route("/api/section/<accession>/<int:section_index>")

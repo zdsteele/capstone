@@ -25,12 +25,12 @@ env:
   - name: LLM_ENDPOINT
     value: "databricks-meta-llama-3-3-70b-instruct"
 
-  # Vector Search — left blank: search_filing_text uses keyword search on the
-  # silver_filing_text_chunks Delta table. Set both to enable hybrid retrieval.
+  # Vector Search — hybrid semantic retrieval over context-enriched filing chunks
+  # (notebook 05). Blank both to fall back to keyword ILIKE.
   - name: VS_ENDPOINT
-    value: ""
+    value: "zachy_vs"
   - name: VS_INDEX
-    value: ""
+    value: "bootcamp_students.zdsteele_capstone.filing_text_index"
   - name: EMBEDDING_ENDPOINT
     value: "databricks-gte-large-en"
 

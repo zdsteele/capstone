@@ -6,6 +6,19 @@
   <h1 id="f-title">Filing {{ accession }}</h1>
   <p class="muted" id="f-meta"></p>
   <p><a id="f-sec" target="_blank" rel="noopener">View source on SEC.gov ↗</a></p>
+
+  <div id="f-intel" class="intel" hidden>
+    <div class="intel-head">
+      <strong>AI briefing</strong>
+      <span id="f-tone" class="tone"></span>
+      <span class="muted" id="f-intel-model"></span>
+    </div>
+    <p id="f-summary"></p>
+    <p id="f-revcomm" class="muted"></p>
+    <div id="f-risks" class="chips"></div>
+    <p id="f-notable" class="muted"></p>
+  </div>
+
   <div class="cols">
     <div>
       <h3>Sections</h3>
@@ -29,6 +42,20 @@ const ACC = {{ accession | tojson }};
   document.getElementById('f-meta').textContent =
     `Filed ${f.filing_date || '—'} · period ${f.report_date || '—'} · ${f.primary_document || ''}`;
   if (f.sec_url) document.getElementById('f-sec').href = f.sec_url;
+
+  const intel = d.intelligence;
+  if (intel) {
+    document.getElementById('f-intel').hidden = false;
+    document.getElementById('f-summary').textContent = intel.executive_summary || '';
+    document.getElementById('f-revcomm').textContent = intel.revenue_commentary || '';
+    document.getElementById('f-notable').textContent = intel.notable_items || '';
+    document.getElementById('f-intel-model').textContent = intel.model || '';
+    const tone = (intel.management_tone || '').toLowerCase();
+    const tEl = document.getElementById('f-tone');
+    tEl.textContent = tone; tEl.className = 'tone ' + tone;
+    document.getElementById('f-risks').innerHTML =
+      (intel.risk_themes || []).map(r => `<span class="chip">${r}</span>`).join('');
+  }
 
   document.getElementById('f-sections').innerHTML = (d.sections || []).map(s =>
     `<li><button class="linkbtn" data-i="${s.section_index}">${s.section}${s.heading ? ' — ' + s.heading : ''}</button>

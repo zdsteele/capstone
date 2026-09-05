@@ -11,6 +11,7 @@
 <section id="company" class="pane" hidden>
   <h2 id="co-name"></h2>
   <p class="muted" id="co-meta"></p>
+  <div id="co-intel"></div>
   <div class="cols">
     <div>
       <h3>Headline metrics</h3>
@@ -55,6 +56,18 @@ async function loadCompany(cik) {
     '<tr><th>Form</th><th>Filed</th><th>Period</th><th></th></tr>' +
     d.filings.map(f => `<tr><td>${f.form}</td><td>${f.filing_date}</td><td>${f.report_date || '—'}</td>
       <td><a href="/filing/${f.accession}">open</a></td></tr>`).join('');
+
+  const ix = await getJSON(`/api/intelligence?ticker=${d.company.ticker || ''}`);
+  const b = (ix.briefings || [])[0];
+  document.getElementById('co-intel').innerHTML = b ? `
+    <div class="intel">
+      <div class="intel-head"><strong>Latest AI briefing</strong>
+        <span class="tone ${(b.management_tone||'').toLowerCase()}">${b.management_tone || ''}</span>
+        <span class="muted">${b.form} · ${b.filing_date}</span></div>
+      <p>${b.executive_summary || ''}</p>
+      <div class="chips">${(b.risk_themes || []).map(r => `<span class="chip">${r}</span>`).join('')}</div>
+      <p class="muted"><a href="/filing/${b.accession}">open filing →</a></p>
+    </div>` : '';
 }
 </script>
 {% endblock %}

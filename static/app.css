@@ -113,5 +113,15 @@ table.grid th { color: var(--muted); font-weight: 600; }
 .bubble .confidence.high { background: #e3f4e8; color: #216e39; }
 .bubble .confidence.medium { background: #fdf1dc; color: #8a5a08; }
 .bubble .confidence.low { background: #fbe4e4; color: #a32020; }
+
+.intel { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 14px 16px; margin: 14px 0; }
+.intel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.intel p { margin: 4px 0; }
+.tone { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; background: #e9ecef; color: var(--muted); }
+.tone.optimistic, .tone.confident { background: #e3f4e8; color: #216e39; }
+.tone.cautious { background: #fdf1dc; color: #8a5a08; }
+.tone.negative { background: #fbe4e4; color: #a32020; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.chip { font-size: 11px; padding: 3px 9px; border-radius: 999px; background: #fff; border: 1px solid var(--line); }
 .chatbar { display: flex; gap: 8px; margin-top: 10px; }
 .chatbar input { flex: 1; }

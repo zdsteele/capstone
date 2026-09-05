@@ -226,6 +226,27 @@ def build_tools(ctx: ToolContext) -> list:
             return json.dumps(out, default=str, indent=2) if out["filing"] else f"No filing {accession}."
 
     @tool
+    def get_filing_intelligence(accession: str) -> str:
+        """Get the AI-generated briefing for a 10-K / 10-Q: executive summary,
+        revenue commentary, risk themes, management tone, and notable items.
+        Prefer this over reading raw sections when the user wants a synthesis."""
+        with record_action(
+            ctx, "get_filing_intelligence", "retrieval", {"accession": accession}
+        ) as rec:
+            rows = _wq(
+                f"""
+                SELECT ticker, form, filing_date, executive_summary, revenue_commentary,
+                       risk_themes, management_tone, notable_items
+                FROM {T('gold_filing_intelligence')} WHERE accession = ?
+                """,
+                [accession],
+            )
+            rec["result"] = rows
+            return _rows_or_msg(
+                rows, f"No AI briefing for {accession} (only 10-K/10-Q are summarized)."
+            )
+
+    @tool
     def get_financial_metric(
         company: str, metric: str, fiscal_year: int | None = None,
         fiscal_period: str | None = None,
@@ -450,15 +471,16 @@ def build_tools(ctx: ToolContext) -> list:
             return f"Removed {company} from '{watchlist_name}'." if n else f"{company} was not on '{watchlist_name}'."
 
     return [
-        search_company, search_filings, get_filing, get_financial_metric,
-        compare_companies, search_filing_text, get_saved_research,
+        search_company, search_filings, get_filing, get_filing_intelligence,
+        get_financial_metric, compare_companies, search_filing_text, get_saved_research,
         save_filing, save_company_to_watchlist, create_research_note,
         update_research_note, remove_from_watchlist,
     ]
 
 
 # ---------------------------------------------------------------------------
-# Vector Search (optional — off by default; keyword fallback in search_filing_text)
+# Vector Search — hybrid (dense + BM25) over context-enriched filing chunks.
+# Falls back to keyword ILIKE when VS_INDEX is unset (see search_filing_text).
 # ---------------------------------------------------------------------------
 
 def _vector_search(ctx: ToolContext, query: str, cik: str | None, k: int):
@@ -467,7 +489,8 @@ def _vector_search(ctx: ToolContext, query: str, cik: str | None, k: int):
 
         w = WorkspaceClient()
         body = {
-            "columns": ["chunk_id", "cik", "accession", "section", "heading", "chunk_text"],
+            "columns": ["chunk_id", "cik", "accession", "ticker", "form",
+                        "section", "heading", "chunk_text"],
             "query_text": query,
             "num_results": min(int(k), 20),
             "query_type": "hybrid",
