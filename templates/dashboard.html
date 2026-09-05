@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Financial Dashboard · EDGAR Intelligence{% endblock %}
+{% block nav_dash %}active{% endblock %}
+{% block content %}
+<section class="pane">
+  <h1>Financial Dashboard</h1>
+  <div class="tabs">
+    <button class="tab active" data-tab="financials">Financials</button>
+    <button class="tab" data-tab="activity">Platform activity</button>
+  </div>
+
+  <div id="tab-financials">
+    <input id="d-company" class="search" placeholder="Ticker or CIK (e.g. AAPL)" />
+    <button id="d-load">Load</button>
+    <div class="cols">
+      <div>
+        <h3>Revenue history</h3>
+        <div id="d-revenue" class="bars"></div>
+      </div>
+      <div>
+        <h3>Latest period</h3>
+        <table id="d-latest" class="grid"></table>
+      </div>
+    </div>
+    <h3>All periods</h3>
+    <div class="scroll"><table id="d-financials" class="grid"></table></div>
+  </div>
+
+  <div id="tab-activity" hidden>
+    <h3>AI agent tool usage</h3>
+    <table id="a-tools" class="grid"></table>
+    <h3>Usage funnel</h3>
+    <table id="a-events" class="grid"></table>
+    <p class="muted" id="a-note"></p>
+  </div>
+</section>
+<script>
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('tab-financials').hidden = t.dataset.tab !== 'financials';
+  document.getElementById('tab-activity').hidden = t.dataset.tab !== 'activity';
+  if (t.dataset.tab === 'activity') loadActivity();
+}));
+
+document.getElementById('d-load').addEventListener('click', loadFinancials);
+document.getElementById('d-company').addEventListener('keydown', e => { if (e.key === 'Enter') loadFinancials(); });
+
+async function loadFinancials() {
+  const c = document.getElementById('d-company').value.trim();
+  if (!c) return;
+  let cik = c;
+  if (!/^\d+$/.test(c)) {
+    const s = await getJSON(`/api/search?q=${encodeURIComponent(c)}`);
+    if (!s.companies || !s.companies.length) return;
+    cik = s.companies[0].cik;
+  }
+  const d = await getJSON(`/api/dashboard/${cik}`);
+  const rev = d.revenue || [];
+  const max = Math.max(1, ...rev.map(r => Number(r.revenue) || 0));
+  document.getElementById('d-revenue').innerHTML = rev.map(r => `
+    <div class="bar"><span class="lbl">${r.fiscal_year} ${r.fiscal_period}</span>
+      <span class="track"><span class="fill" style="width:${(Number(r.revenue)||0)/max*100}%"></span></span>
+      <span class="val">${fmtUSD(r.revenue)} ${r.yoy_pct != null ? `(${r.yoy_pct > 0 ? '+' : ''}${r.yoy_pct}% YoY)` : ''}</span>
+    </div>`).join('');
+
+  const fin = d.financials || [];
+  const last = fin[fin.length - 1] || {};
+  document.getElementById('d-latest').innerHTML = Object.entries({
+    Revenue: last.revenue, 'Gross profit': last.gross_profit, 'Operating income': last.operating_income,
+    'Net income': last.net_income, 'Total assets': last.total_assets, 'Total liabilities': last.total_liabilities,
+    'Operating cash flow': last.operating_cash_flow, 'EPS (diluted)': last.eps_diluted,
+  }).map(([k, v]) => `<tr><th>${k}</th><td>${k.includes('EPS') ? (v ?? '—') : fmtUSD(v)}</td></tr>`).join('');
+
+  document.getElementById('d-financials').innerHTML =
+    '<tr><th>Period</th><th>Revenue</th><th>Op income</th><th>Net income</th><th>Assets</th><th>OCF</th></tr>' +
+    fin.map(r => `<tr><td>${r.fiscal_year} ${r.fiscal_period}</td><td>${fmtUSD(r.revenue)}</td>
+      <td>${fmtUSD(r.operating_income)}</td><td>${fmtUSD(r.net_income)}</td>
+      <td>${fmtUSD(r.total_assets)}</td><td>${fmtUSD(r.operating_cash_flow)}</td></tr>`).join('');
+}
+
+async function loadActivity() {
+  const d = await getJSON('/api/dashboard/activity');
+  document.getElementById('a-tools').innerHTML =
+    '<tr><th>Tool</th><th>Calls</th><th>Success rate</th></tr>' +
+    (d.tool_stats || []).map(t => `<tr><td>${t.tool_name}</td><td>${t.call_count}</td>
+      <td>${t.success_rate != null ? (t.success_rate * 100).toFixed(0) + '%' : '—'}</td></tr>`).join('');
+  document.getElementById('a-events').innerHTML =
+    '<tr><th>Event</th><th>Count</th></tr>' +
+    (d.events || []).map(e => `<tr><td>${e.event_type}</td><td>${e.event_count}</td></tr>`).join('');
+  document.getElementById('a-note').textContent = d.note || '';
+}
+</script>
+{% endblock %}

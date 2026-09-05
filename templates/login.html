@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · EDGAR Intelligence</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}" />
+</head>
+<body class="centered">
+  <form class="card login" method="post" action="{{ url_for('do_login') }}">
+    <h1>EDGAR Intelligence Platform</h1>
+    <p class="muted">Classroom sign-in — pick a username, no password.</p>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <input name="username" placeholder="username" autofocus
+           pattern="[a-z_][a-z0-9_]{0,57}" required />
+    <button type="submit">Enter</button>
+  </form>
+</body>
+</html>

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Filing Explorer · EDGAR Intelligence{% endblock %}
+{% block content %}
+{% if error %}<section class="pane"><p class="error">{{ error }}</p></section>{% else %}
+<section class="pane">
+  <h1 id="f-title">Filing {{ accession }}</h1>
+  <p class="muted" id="f-meta"></p>
+  <p><a id="f-sec" target="_blank" rel="noopener">View source on SEC.gov ↗</a></p>
+  <div class="cols">
+    <div>
+      <h3>Sections</h3>
+      <ul id="f-sections" class="list"></ul>
+      <div id="f-sectext" class="sectext"></div>
+    </div>
+    <div>
+      <h3>Exhibits</h3>
+      <table id="f-exhibits" class="grid"></table>
+      <h3>XBRL facts <span class="muted">(sample)</span></h3>
+      <table id="f-facts" class="grid"></table>
+    </div>
+  </div>
+</section>
+<script>
+const ACC = {{ accession | tojson }};
+(async () => {
+  const d = await getJSON(`/api/filing/${ACC}`);
+  const f = d.filing || {};
+  document.getElementById('f-title').textContent = `${f.form || ''} — ${f.cik || ''} — ${ACC}`;
+  document.getElementById('f-meta').textContent =
+    `Filed ${f.filing_date || '—'} · period ${f.report_date || '—'} · ${f.primary_document || ''}`;
+  if (f.sec_url) document.getElementById('f-sec').href = f.sec_url;
+
+  document.getElementById('f-sections').innerHTML = (d.sections || []).map(s =>
+    `<li><button class="linkbtn" data-i="${s.section_index}">${s.section}${s.heading ? ' — ' + s.heading : ''}</button>
+     <span class="muted">${s.char_len} chars</span></li>`).join('');
+  document.querySelectorAll('#f-sections button').forEach(b => b.addEventListener('click', async () => {
+    const s = await getJSON(`/api/section/${ACC}/${b.dataset.i}`);
+    document.getElementById('f-sectext').textContent = s.text || '(empty)';
+  }));
+
+  document.getElementById('f-exhibits').innerHTML =
+    '<tr><th>Seq</th><th>Type</th><th>File</th><th>Description</th></tr>' +
+    (d.exhibits || []).map(e => `<tr><td>${e.sequence || ''}</td><td>${e.doc_type || ''}</td>
+      <td>${e.filename || ''}</td><td>${e.description || ''}</td></tr>`).join('');
+
+  document.getElementById('f-facts').innerHTML =
+    '<tr><th>Concept</th><th>Period end</th><th>Unit</th><th>Value</th></tr>' +
+    (d.facts || []).map(x => `<tr><td>${x.concept}</td><td>${x.period_end || ''}</td>
+      <td>${x.unit}</td><td>${fmtNum(x.value)}</td></tr>`).join('');
+})();
+</script>
+{% endif %}
+{% endblock %}

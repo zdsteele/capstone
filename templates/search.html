@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Company Search · EDGAR Intelligence{% endblock %}
+{% block nav_search %}active{% endblock %}
+{% block content %}
+<section class="pane">
+  <h1>Company Search</h1>
+  <input id="q" class="search" placeholder="Search by name, ticker, or CIK (e.g. Alphabet, MSFT, 0000320193)" autofocus />
+  <div id="results" class="results"></div>
+</section>
+
+<section id="company" class="pane" hidden>
+  <h2 id="co-name"></h2>
+  <p class="muted" id="co-meta"></p>
+  <div class="cols">
+    <div>
+      <h3>Headline metrics</h3>
+      <table id="co-metrics" class="grid"></table>
+    </div>
+    <div>
+      <h3>Recent filings</h3>
+      <table id="co-filings" class="grid"></table>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block script %}
+<script>
+const q = document.getElementById('q');
+const results = document.getElementById('results');
+q.addEventListener('input', debounce(async () => {
+  const term = q.value.trim();
+  if (!term) { results.innerHTML = ''; return; }
+  const data = await getJSON(`/api/search?q=${encodeURIComponent(term)}`);
+  results.innerHTML = (data.companies || []).map(c => `
+    <button class="row" data-cik="${c.cik}">
+      <strong>${c.ticker || ''}</strong> ${c.name}
+      <span class="muted">CIK ${c.cik} · ${c.filing_count} filings</span>
+    </button>`).join('') || '<p class="muted">No matches.</p>';
+  results.querySelectorAll('.row').forEach(b =>
+    b.addEventListener('click', () => loadCompany(b.dataset.cik)));
+}, 250));
+
+async function loadCompany(cik) {
+  const d = await getJSON(`/api/company/${cik}`);
+  if (!d.company) return;
+  document.getElementById('company').hidden = false;
+  document.getElementById('co-name').textContent = `${d.company.ticker || ''} ${d.company.name}`;
+  document.getElementById('co-meta').textContent =
+    `CIK ${d.company.cik} · SIC ${d.company.sic || '—'} ${d.company.sic_description || ''}`;
+  document.getElementById('co-metrics').innerHTML =
+    '<tr><th>Period</th><th>Revenue</th><th>Net income</th><th>EPS (dil.)</th></tr>' +
+    d.metrics.map(m => `<tr><td>${m.fiscal_year} ${m.fiscal_period}</td>
+      <td>${fmtUSD(m.revenue)}</td><td>${fmtUSD(m.net_income)}</td><td>${m.eps_diluted ?? '—'}</td></tr>`).join('');
+  document.getElementById('co-filings').innerHTML =
+    '<tr><th>Form</th><th>Filed</th><th>Period</th><th></th></tr>' +
+    d.filings.map(f => `<tr><td>${f.form}</td><td>${f.filing_date}</td><td>${f.report_date || '—'}</td>
+      <td><a href="/filing/${f.accession}">open</a></td></tr>`).join('');
+}
+</script>
+{% endblock %}

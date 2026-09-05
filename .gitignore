@@ -1,0 +1,17 @@
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+venv/
+env/
+*.log
+.DS_Store
+Thumbs.db
+*.ipynb_checkpoints/
+.databricks/
+scratch/
+# Living context doc — local reference only, mirrors ltap-cdc-day-2 convention
+CONTEXT.md

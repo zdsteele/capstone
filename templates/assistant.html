@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}AI Research Assistant · EDGAR Intelligence{% endblock %}
+{% block nav_ai %}active{% endblock %}
+{% block content %}
+<section class="pane chat">
+  <h1>AI Research Assistant</h1>
+  <p class="muted">Ask about filings and financials, or tell it to save a filing, add to your watchlist, or write a research note.</p>
+  <div id="log" class="chatlog"></div>
+  <form id="chatform" class="chatbar">
+    <input id="msg" placeholder="e.g. Summarize Alphabet's most recent 10-Q revenue vs operating expenses" autofocus />
+    <button type="submit" id="send">Send</button>
+  </form>
+</section>
+<script>
+const log = document.getElementById('log');
+const form = document.getElementById('chatform');
+const msg = document.getElementById('msg');
+let history = [];
+let conversationId = null;
+
+function bubble(role, text, tools, confidence, confidenceReason) {
+  const el = document.createElement('div');
+  el.className = 'bubble ' + role;
+  el.textContent = text;
+  if (confidence) {
+    const c = document.createElement('div');
+    c.className = 'confidence ' + confidence;
+    c.textContent = 'confidence: ' + confidence + (confidenceReason ? ' — ' + confidenceReason : '');
+    el.appendChild(c);
+  }
+  if (tools && tools.length) {
+    const t = document.createElement('div');
+    t.className = 'tools';
+    t.textContent = 'tools: ' + tools.join(', ');
+    el.appendChild(t);
+  }
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = msg.value.trim();
+  if (!text) return;
+  bubble('user', text);
+  msg.value = '';
+  document.getElementById('send').disabled = true;
+  bubble('assistant', '…');
+  const pending = log.lastChild;
+  try {
+    const r = await postJSON('/api/assistant/message', {
+      message: text, history, conversation_id: conversationId,
+    });
+    conversationId = r.conversation_id;
+    pending.remove();
+    bubble('assistant', r.reply || '(no reply)', r.tool_calls, r.confidence, r.confidence_reason);
+    history.push({ role: 'user', content: text });
+    history.push({ role: 'assistant', content: r.reply || '' });
+  } catch (err) {
+    pending.remove();
+    bubble('assistant', 'Error: ' + err.message);
+  } finally {
+    document.getElementById('send').disabled = false;
+    msg.focus();
+  }
+});
+</script>
+{% endblock %}

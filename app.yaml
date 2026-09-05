@@ -1,0 +1,39 @@
+command:
+  - "python"
+  - "app.py"
+
+env:
+  # Lakebase (Postgres) — the deployed app gets PGHOST/PGUSER/PGDATABASE/PGPORT
+  # (+ a rotated credential) automatically from the `database` resource binding
+  # in databricks.yml. lib/lakebase.py reads those; no secret to create.
+  - name: LAKEBASE_SCHEMA
+    value: "bootcamp_students"
+  - name: LAKEBASE_INSTANCE
+    value: "summer-bootcamp-2026-v2"
+
+  # SQL warehouse for Gold/Silver Delta reads (lib/warehouse.py)
+  - name: DATABRICKS_WAREHOUSE_ID
+    value: "b15d3d6f837ba428"
+
+  # Unity Catalog location of the medallion tables
+  - name: UC_CATALOG
+    value: "bootcamp_students"
+  - name: UC_SCHEMA
+    value: "zdsteele"
+
+  # Foundation model for the in-process agent
+  - name: LLM_ENDPOINT
+    value: "databricks-meta-llama-3-3-70b-instruct"
+
+  # Vector Search — left blank: search_filing_text uses keyword search on the
+  # silver_filing_text_chunks Delta table. Set both to enable hybrid retrieval.
+  - name: VS_ENDPOINT
+    value: ""
+  - name: VS_INDEX
+    value: ""
+  - name: EMBEDDING_ENDPOINT
+    value: "databricks-gte-large-en"
+
+  # SEC requires a descriptive User-Agent with a real contact
+  - name: SEC_USER_AGENT
+    value: "EDGAR Intelligence Platform - Zach Steele zacharysteele8@gmail.com"
