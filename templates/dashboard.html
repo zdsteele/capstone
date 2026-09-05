@@ -6,12 +6,14 @@
   <h1>Financial Dashboard</h1>
   <div class="tabs">
     <button class="tab active" data-tab="financials">Financials</button>
+    <button class="tab" data-tab="health">Company health</button>
     <button class="tab" data-tab="activity">Platform activity</button>
   </div>
 
+  <input id="d-company" class="search" placeholder="Ticker or CIK (e.g. AAPL)" />
+  <button id="d-load">Load</button>
+
   <div id="tab-financials">
-    <input id="d-company" class="search" placeholder="Ticker or CIK (e.g. AAPL)" />
-    <button id="d-load">Load</button>
     <div class="cols">
       <div>
         <h3>Revenue history</h3>

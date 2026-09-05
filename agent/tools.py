@@ -247,6 +247,56 @@ def build_tools(ctx: ToolContext) -> list:
             )
 
     @tool
+    def get_financial_ratios(
+        company: str, fiscal_year: int | None = None, fiscal_period: str | None = None
+    ) -> str:
+        """Get derived ratios + trend flags for a company (margins, revenue growth,
+        FCF & FCF margin & conversion, net debt, debt/equity, ROE, ROIC (approx),
+        capex intensity, per-share figures) by period. `*_trend` is up/down/stable
+        vs. the same period a year earlier. Optionally pin fiscal_year / fiscal_period."""
+        with record_action(
+            ctx, "get_financial_ratios", "retrieval",
+            {"company": company, "fiscal_year": fiscal_year, "fiscal_period": fiscal_period},
+        ) as rec:
+            cik = _resolve_cik(company)
+            if not cik:
+                return f"Could not resolve company '{company}'."
+            rows = _wq(
+                f"""
+                SELECT fiscal_year, fiscal_period, period_end, revenue, revenue_growth_yoy,
+                       gross_margin, operating_margin, net_margin, fcf, fcf_margin,
+                       fcf_conversion, net_debt, debt_to_equity, return_on_equity,
+                       roic_approx, capex_intensity, diluted_shares_approx,
+                       operating_margin_trend, fcf_margin_trend, roic_approx_trend,
+                       net_debt_trend, diluted_shares_approx_trend
+                FROM {T('gold_financial_ratios')}
+                WHERE cik = ? AND (? IS NULL OR fiscal_year = ?)
+                  AND (? IS NULL OR fiscal_period = ?)
+                ORDER BY period_end DESC LIMIT 20
+                """,
+                [cik, fiscal_year, fiscal_year, fiscal_period, fiscal_period],
+            )
+            rec["result"] = rows
+            return _rows_or_msg(rows, f"No ratios for {company} (run notebook 09).")
+
+    @tool
+    def get_company_health(company: str) -> str:
+        """Get the AI investor health assessment for a company: 0-100 scores per
+        dimension + overall, direction, and the full structured report (what
+        changed, cash check, debt check, shareholder check, accounting check,
+        risks, bull/base/bear, what to watch next, bottom line). Use this for
+        'is this company healthy / improving / a good business' questions."""
+        with record_action(ctx, "get_company_health", "retrieval", {"company": company}) as rec:
+            cik = _resolve_cik(company)
+            if not cik:
+                return f"Could not resolve company '{company}'."
+            rows = _wq(
+                f"SELECT * EXCEPT (raw) FROM {T('gold_company_health')} WHERE cik = ?", [cik]
+            )
+            rec["result"] = rows
+            return _rows_or_msg(rows, f"No health assessment for {company} (run notebook 10).")
+
+    @tool
     def get_financial_metric(
         company: str, metric: str, fiscal_year: int | None = None,
         fiscal_period: str | None = None,
@@ -472,6 +522,7 @@ def build_tools(ctx: ToolContext) -> list:
 
     return [
         search_company, search_filings, get_filing, get_filing_intelligence,
+        get_financial_ratios, get_company_health,
         get_financial_metric, compare_companies, search_filing_text, get_saved_research,
         save_filing, save_company_to_watchlist, create_research_note,
         update_research_note, remove_from_watchlist,

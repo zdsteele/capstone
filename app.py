@@ -271,6 +271,31 @@ def api_filing(accession):
     )
 
 
+@app.route("/api/health/<cik>")
+def api_health(cik):
+    _require_user()
+    if not _CIK_RE.match(cik):
+        return jsonify({"error": "bad cik"}), 400
+    cik = cik.zfill(10)
+    try:
+        h = warehouse.query(
+            f"SELECT * EXCEPT (raw) FROM {T('gold_company_health')} WHERE cik = ?", [cik]
+        )
+        ratios = warehouse.query(
+            f"""
+            SELECT fiscal_year, fiscal_period, period_end, revenue, revenue_growth_yoy,
+                   gross_margin, operating_margin, net_margin, fcf, fcf_margin,
+                   net_debt, return_on_equity, roic_approx,
+                   operating_margin_trend, fcf_margin_trend, roic_approx_trend, net_debt_trend
+            FROM {T('gold_financial_ratios')} WHERE cik = ? ORDER BY period_end DESC LIMIT 12
+            """,
+            [cik],
+        )
+    except Exception as exc:
+        return jsonify({"health": None, "ratios": [], "note": f"run notebooks 09 + 10: {exc}"})
+    return jsonify({"health": h[0] if h else None, "ratios": ratios})
+
+
 @app.route("/api/intelligence")
 def api_intelligence():
     _require_user()
