@@ -22,7 +22,7 @@ import json
 import time
 
 dbutils.widgets.text("catalog", "bootcamp_students")
-dbutils.widgets.text("schema", "zdsteele")
+dbutils.widgets.text("schema", "zachy_zacharysteele8")
 dbutils.widgets.text("vs_endpoint", "")           # e.g. "zdsteele_vs" — blank to skip
 dbutils.widgets.text("embedding_endpoint", "databricks-gte-large-en")
 

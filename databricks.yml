@@ -5,7 +5,7 @@ variables:
   catalog:
     default: bootcamp_students
   schema:
-    default: zdsteele
+    default: zachy_zacharysteele8
   warehouse_id:
     default: b15d3d6f837ba428
 

@@ -21,7 +21,7 @@
 import json
 
 dbutils.widgets.text("catalog", "bootcamp_students")
-dbutils.widgets.text("schema", "zdsteele")
+dbutils.widgets.text("schema", "zachy_zacharysteele8")
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 T = lambda n: f"{CATALOG}.{SCHEMA}.{n}"

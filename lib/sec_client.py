@@ -31,8 +31,11 @@ COMPANYCONCEPT_URL = (
 ARCHIVE_DOC_URL = (
     "https://www.sec.gov/Archives/edgar/data/{cik_int}/{accn_nodash}/{doc}"
 )
+# The complete submission text file sits inside the accession folder and keeps
+# the dashed accession as its filename, e.g.
+# .../data/320193/000032019324000081/0000320193-24-000081.txt
 ARCHIVE_SUBMISSION_TXT_URL = (
-    "https://www.sec.gov/Archives/edgar/data/{cik_int}/{accn_nodash}.txt"
+    "https://www.sec.gov/Archives/edgar/data/{cik_int}/{accn_nodash}/{accn_dashed}.txt"
 )
 COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 
@@ -167,7 +170,9 @@ class SecClient:
     def submission_txt(self, cik: str | int, accession: str) -> bytes:
         return self.get_bytes(
             ARCHIVE_SUBMISSION_TXT_URL.format(
-                cik_int=int(cik10(cik)), accn_nodash=accession_nodash(accession)
+                cik_int=int(cik10(cik)),
+                accn_nodash=accession_nodash(accession),
+                accn_dashed=accession,
             )
         )
 

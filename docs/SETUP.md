@@ -11,7 +11,7 @@ Known values for this workspace:
 | Lakebase host | `ep-patient-sun-d1ycq936.database.us-west-2.cloud.databricks.com` |
 | Lakebase Postgres schema | `bootcamp_students` (shared — per the TA). Every capstone table is prefixed `edgar_zdsteele_` |
 | SQL warehouse | `Serverless Starter Warehouse`, id `b15d3d6f837ba428` |
-| Unity Catalog schema | `bootcamp_students.zdsteele` (Delta medallion tables) |
+| Unity Catalog schema | `bootcamp_students.zachy_zacharysteele8` (Delta medallion tables — your bootcamp schema) |
 | Vector Search | not used (keyword search); `zachy_vs` exists if you want it later |
 | LLM endpoint | `databricks-meta-llama-3-3-70b-instruct` |
 
@@ -31,11 +31,11 @@ In the Lakebase project UI (`summer-bootcamp-2026-v2` → branch `production` �
 All 8 tables live in the shared `bootcamp_students` schema, prefixed
 `edgar_zdsteele_` so they don't collide with other students'.
 
-## 2. Pipeline notebooks — Unity Catalog `bootcamp_students.zdsteele`
+## 2. Pipeline notebooks — Unity Catalog `bootcamp_students.zachy_zacharysteele8`
 
 Import the repo as a **Git folder** in Databricks, then run `notebooks/` in
 order on a serverless cluster. Widgets already default to
-`catalog=bootcamp_students`, `schema=zdsteele`.
+`catalog=bootcamp_students`, `schema=zachy_zacharysteele8`.
 
 | Run | Notebook | Output |
 |---|---|---|
@@ -52,7 +52,7 @@ Each notebook prints row counts and `dbutils.notebook.exit(...)` with a summary.
 **Goal:** stream these 6 writable Postgres tables into Delta history tables so
 the analytics job can read them.
 
-| Source (Lakebase `bootcamp_students`) | Target (Unity Catalog `bootcamp_students.zdsteele`) |
+| Source (Lakebase `bootcamp_students`) | Target (Unity Catalog `bootcamp_students.zachy_zacharysteele8`) |
 |---|---|
 | `edgar_zdsteele_watchlists` | `lb_edgar_zdsteele_watchlists_history` |
 | `edgar_zdsteele_watchlist_companies` | `lb_edgar_zdsteele_watchlist_companies_history` |
@@ -125,7 +125,7 @@ sync needed.
 Edit `config/ciks.json` to ≥ 100 companies, re-run notebooks `01`→`06`, then:
 
 ```sql
-SELECT COUNT(*) FROM bootcamp_students.zdsteele.silver_financial_facts;  -- want > 1,000,000
+SELECT COUNT(*) FROM bootcamp_students.zachy_zacharysteele8.silver_financial_facts;  -- want > 1,000,000
 ```
 
 Variety is already satisfied (JSON submissions + HTML filings + XBRL + full

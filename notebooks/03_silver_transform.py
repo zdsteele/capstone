@@ -35,7 +35,7 @@ from lib.edgar_parse import (
 )
 
 dbutils.widgets.text("catalog", "bootcamp_students")
-dbutils.widgets.text("schema", "zdsteele")
+dbutils.widgets.text("schema", "zachy_zacharysteele8")
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 T = lambda name: f"{CATALOG}.{SCHEMA}.{name}"
