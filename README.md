@@ -24,7 +24,7 @@ Gold Delta    gold_company_financials / gold_revenue_history / gold_*_metrics / 
         ▼
 Flask app + in-process LangGraph agent (retrieval tools)
         │  agent write tools + app writes INSERT into Lakebase
-bootcamp_students.edgar_zdsteele_{saved_filings, watchlist_companies, saved_research, agent_conversations, agent_actions}
+edgar.{saved_filings, watchlist_companies, saved_research, agent_conversations, agent_actions}
         │  Lakebase Change Data Feed (reverse Synced Tables — the one UI step)
         ▼
 Delta  lb_*_history  →  06_analytics_cdf.py (watermark)  →  gold_usage_events + marts  →  read back via warehouse  →  dashboard
@@ -60,10 +60,10 @@ app.yaml, databricks.yml   deploy config
 
 ## Setup (summary — full runbook in `docs/SETUP.md`)
 
-1. Run `sql/00`–`20` in the Lakebase **SQL Editor** (tables `bootcamp_students.edgar_zdsteele_*`).
+1. Run `sql/00`–`20` in the Lakebase **SQL Editor** (tables `edgar.*`).
 2. Run notebooks `01`→`04` (widgets default to `bootcamp_students` / `zachy_zacharysteele8`).
    `05` is optional (keyword search by default).
-3. Set up **reverse** CDC only: the 6 `bootcamp_students.edgar_zdsteele_*` tables →
+3. Set up **reverse** CDC only: the 6 `edgar.*` tables →
    `bootcamp_students.zachy_zacharysteele8.lb_*_history`. Forward reads go through the
    warehouse — nothing to create.
 4. `cp .env.example .env` (paste the Lakebase Connect string + OAuth token),

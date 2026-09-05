@@ -20,12 +20,12 @@ resources:
         table_update:
           condition: ANY_UPDATED
           table_names:
-            - "${var.catalog}.${var.schema}.lb_edgar_zdsteele_agent_actions_history"
-            - "${var.catalog}.${var.schema}.lb_edgar_zdsteele_saved_filings_history"
-            - "${var.catalog}.${var.schema}.lb_edgar_zdsteele_saved_research_history"
-            - "${var.catalog}.${var.schema}.lb_edgar_zdsteele_watchlist_companies_history"
-            - "${var.catalog}.${var.schema}.lb_edgar_zdsteele_watchlists_history"
-            - "${var.catalog}.${var.schema}.lb_edgar_zdsteele_agent_conversations_history"
+            - "${var.catalog}.${var.schema}.lb_edgar_agent_actions_history"
+            - "${var.catalog}.${var.schema}.lb_edgar_saved_filings_history"
+            - "${var.catalog}.${var.schema}.lb_edgar_saved_research_history"
+            - "${var.catalog}.${var.schema}.lb_edgar_watchlist_companies_history"
+            - "${var.catalog}.${var.schema}.lb_edgar_watchlists_history"
+            - "${var.catalog}.${var.schema}.lb_edgar_agent_conversations_history"
           min_time_between_triggers_seconds: 60
           wait_after_last_change_seconds: 60
       tasks:
@@ -46,7 +46,7 @@ resources:
         - name: database
           database:
             database_name: databricks_postgres
-            instance_name: summer-bootcamp-2026-v2
+            instance_name: zdsteele-capstone
             permission: CAN_CONNECT_AND_CREATE
         # SQL warehouse for Gold/Silver Delta reads
         - name: sql_warehouse

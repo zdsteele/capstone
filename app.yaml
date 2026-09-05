@@ -7,9 +7,9 @@ env:
   # (+ a rotated credential) automatically from the `database` resource binding
   # in databricks.yml. lib/lakebase.py reads those; no secret to create.
   - name: LAKEBASE_SCHEMA
-    value: "bootcamp_students"
+    value: "edgar"
   - name: LAKEBASE_INSTANCE
-    value: "summer-bootcamp-2026-v2"
+    value: "zdsteele-capstone"
 
   # SQL warehouse for Gold/Silver Delta reads (lib/warehouse.py)
   - name: DATABRICKS_WAREHOUSE_ID

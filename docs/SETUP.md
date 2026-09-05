@@ -7,9 +7,9 @@ Known values for this workspace:
 
 | Thing | Value |
 |---|---|
-| Lakebase instance | `summer-bootcamp-2026-v2` (branch `production`, db `databricks_postgres`, role `users`) |
-| Lakebase host | `ep-patient-sun-d1ycq936.database.us-west-2.cloud.databricks.com` |
-| Lakebase Postgres schema | `bootcamp_students` (shared — per the TA). Every capstone table is prefixed `edgar_zdsteele_` |
+| Lakebase instance | **`zdsteele-capstone`** — dedicated project, scale-to-zero. Only these 8 tables live here, so the reverse sync carries nothing else |
+| Lakebase host | from the `zdsteele-capstone` Connect dialog (send it to me for `.env`) |
+| Lakebase Postgres schema | `edgar` (clean, unprefixed table names) |
 | SQL warehouse | `Serverless Starter Warehouse`, id `b15d3d6f837ba428` |
 | Unity Catalog schema | `bootcamp_students.zachy_zacharysteele8` (Delta medallion tables — your bootcamp schema) |
 | Vector Search | not used (keyword search); `zachy_vs` exists if you want it later |
@@ -17,19 +17,17 @@ Known values for this workspace:
 
 ---
 
-## 1. Lakebase tables — Lakebase **SQL Editor**
+## 1. Lakebase tables — **`zdsteele-capstone`** SQL Editor
 
-In the Lakebase project UI (`summer-bootcamp-2026-v2` → branch `production` →
-**SQL Editor** in the left nav), paste and run, in order:
+In the `zdsteele-capstone` Lakebase project → **SQL Editor**, paste and run in order:
 
-1. `sql/00_create_schema.sql` — `CREATE SCHEMA IF NOT EXISTS bootcamp_students`
-   (it already exists — harmless)
-2. `sql/10_operational_tables.sql` — 8 tables named `edgar_zdsteele_*`, each
-   `REPLICA IDENTITY FULL`
+1. `sql/00_create_schema.sql` — `CREATE SCHEMA IF NOT EXISTS edgar`
+2. `sql/10_operational_tables.sql` — 8 tables in `edgar`, each `REPLICA IDENTITY FULL`
 3. `sql/20_seed.sql` — demo user + pilot companies + a default watchlist
 
-All 8 tables live in the shared `bootcamp_students` schema, prefixed
-`edgar_zdsteele_` so they don't collide with other students'.
+Tables: `edgar.users`, `edgar.companies`, `edgar.watchlists`,
+`edgar.watchlist_companies`, `edgar.saved_filings`, `edgar.saved_research`,
+`edgar.agent_conversations`, `edgar.agent_actions`.
 
 ## 2. Pipeline notebooks — Unity Catalog `bootcamp_students.zachy_zacharysteele8`
 
@@ -49,20 +47,23 @@ Each notebook prints row counts and `dbutils.notebook.exit(...)` with a summary.
 
 ## 3. Reverse CDC — Lakebase → Delta  **(the one UI step)**
 
-**Goal:** stream these 6 writable Postgres tables into Delta history tables so
-the analytics job can read them.
+**Goal:** stream the 6 writable `edgar` tables from `zdsteele-capstone` into Delta
+history tables so the analytics job can read them. Because `zdsteele-capstone` is
+your own instance, syncing the whole `edgar` schema is fine — there's nothing
+else in it.
 
-| Source (Lakebase `bootcamp_students`) | Target (Unity Catalog `bootcamp_students.zachy_zacharysteele8`) |
+| Source (`zdsteele-capstone` schema `edgar`) | Target (`bootcamp_students.zachy_zacharysteele8`) |
 |---|---|
-| `edgar_zdsteele_watchlists` | `lb_edgar_zdsteele_watchlists_history` |
-| `edgar_zdsteele_watchlist_companies` | `lb_edgar_zdsteele_watchlist_companies_history` |
-| `edgar_zdsteele_saved_filings` | `lb_edgar_zdsteele_saved_filings_history` |
-| `edgar_zdsteele_saved_research` | `lb_edgar_zdsteele_saved_research_history` |
-| `edgar_zdsteele_agent_conversations` | `lb_edgar_zdsteele_agent_conversations_history` |
-| `edgar_zdsteele_agent_actions` | `lb_edgar_zdsteele_agent_actions_history` |
+| `edgar.watchlists` | `lb_edgar_watchlists_history` |
+| `edgar.watchlist_companies` | `lb_edgar_watchlist_companies_history` |
+| `edgar.saved_filings` | `lb_edgar_saved_filings_history` |
+| `edgar.saved_research` | `lb_edgar_saved_research_history` |
+| `edgar.agent_conversations` | `lb_edgar_agent_conversations_history` |
+| `edgar.agent_actions` | `lb_edgar_agent_actions_history` |
 
-Rule: target name = `lb_` + source table name + `_history`. Snapshot or
-continuous mode both fine.
+Rule: target name = `lb_edgar_` + table + `_history`. Snapshot or continuous
+mode both fine. (`companies` and `users` don't need syncing — not analytics
+sources.)
 
 `REPLICA IDENTITY FULL` is already set (step 1), so the source side is ready.
 
@@ -96,15 +97,15 @@ pip install -r requirements.txt
 python app.py            # http://localhost:8000
 ```
 
-Sign in with any lowercase username → creates a row in `bootcamp_students.edgar_zdsteele_users`.
+Sign in with any lowercase username → creates a row in `edgar.users`.
 Smoke test:
 - **Search** → type `Alphabet` → click the result → filings + metrics load
 - **Filing** → open a 10-Q → sections / exhibits / XBRL facts
 - **Dashboard** → enter `AAPL` → revenue bars + tables
 - **Research Assistant** → "Summarize Alphabet's latest 10-Q revenue vs operating
   expenses", then "Save that filing and add a research note comparing Google
-  Cloud to Microsoft" → check `bootcamp_students.edgar_zdsteele_saved_filings` /
-  `bootcamp_students.edgar_zdsteele_saved_research` / `bootcamp_students.edgar_zdsteele_agent_actions`
+  Cloud to Microsoft" → check `edgar.saved_filings` /
+  `edgar.saved_research` / `edgar.agent_actions`
 
 ## 5. Deploy
 

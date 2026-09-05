@@ -13,9 +13,9 @@ in priority order:
    is bound as a resource. If ``PGPASSWORD`` is absent, a fresh credential is
    minted from the ambient Databricks identity.
 
-All capstone Postgres objects live in the shared ``bootcamp_students`` schema,
-each prefixed ``edgar_`` (per the bootcamp TA — no personal schema). Gold/Silver
-reads do **not** go here — see ``lib.warehouse``.
+All capstone Postgres objects live in schema ``edgar`` on the dedicated
+``zdsteele-capstone`` Lakebase instance (its own project, so nothing else
+replicates to Delta). Gold/Silver reads do **not** go here — see ``lib.warehouse``.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from contextlib import contextmanager
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-SCHEMA = os.environ.get("LAKEBASE_SCHEMA", "bootcamp_students")
-INSTANCE = os.environ.get("LAKEBASE_INSTANCE", "summer-bootcamp-2026-v2")
+SCHEMA = os.environ.get("LAKEBASE_SCHEMA", "edgar")
+INSTANCE = os.environ.get("LAKEBASE_INSTANCE", "zdsteele-capstone")
 
 
 def _mint_password(host: str, user: str) -> str:

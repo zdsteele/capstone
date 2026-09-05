@@ -3,9 +3,9 @@ Tools for the SEC Research Assistant.
 
 Retrieval tools read the Gold/Silver Delta marts (`bootcamp_students.zdsteele.*`)
 through the SQL warehouse (``lib.warehouse``). Write tools mutate the
-``bootcamp_students.edgar_zdsteele_*`` operational tables in Lakebase (``lib.lakebase``).
+``edgar.*`` operational tables in Lakebase (``lib.lakebase``).
 
-Every tool call is logged to ``bootcamp_students.edgar_zdsteele_agent_actions`` — retrieval tools as
+Every tool call is logged to ``edgar.agent_actions`` — retrieval tools as
 ``SUCCESS``/``ERROR``; write tools start ``PENDING`` and flip on completion (the
 ``submit_receipt`` sink pattern from ``ai-agents-2026``). That table is the CDF
 source for the usage-analytics pipeline.
@@ -46,7 +46,7 @@ def record_action(ctx: ToolContext, tool_name: str, kind: str, args: dict):
     try:
         rows = lakebase.run_write(
             """
-            INSERT INTO bootcamp_students.edgar_zdsteele_agent_actions
+            INSERT INTO edgar.agent_actions
                 (conversation_id, user_id, tool_name, tool_kind, args_json, status)
             VALUES (%(conv)s, %(uid)s, %(tool)s, %(kind)s, %(args)s::jsonb, 'PENDING')
             RETURNING action_id
@@ -79,7 +79,7 @@ def _finish(action_id, status, result, error, started):
     try:
         lakebase.run_write(
             """
-            UPDATE bootcamp_students.edgar_zdsteele_agent_actions
+            UPDATE edgar.agent_actions
                SET status = %(status)s,
                    result_json = %(result)s::jsonb,
                    error = %(error)s,
@@ -130,7 +130,7 @@ def _resolve_cik(token: str) -> str | None:
         return rows[0]["cik"]
     try:
         rows = lakebase.run_query(
-            "SELECT cik FROM bootcamp_students.edgar_zdsteele_companies WHERE upper(ticker) = %s LIMIT 1", (t,)
+            "SELECT cik FROM edgar.companies WHERE upper(ticker) = %s LIMIT 1", (t,)
         )
         return rows[0]["cik"] if rows else None
     except Exception:
@@ -140,7 +140,7 @@ def _resolve_cik(token: str) -> str | None:
 def _default_watchlist_id(ctx: ToolContext, name: str) -> int:
     rows = lakebase.run_write(
         """
-        INSERT INTO bootcamp_students.edgar_zdsteele_watchlists (user_id, name)
+        INSERT INTO edgar.watchlists (user_id, name)
         VALUES (%(uid)s, %(name)s)
         ON CONFLICT (user_id, name) DO UPDATE SET name = EXCLUDED.name
         RETURNING watchlist_id
@@ -314,7 +314,7 @@ def build_tools(ctx: ToolContext) -> list:
                 rows = lakebase.run_query(
                     """
                     SELECT research_id, title, company_cik, filing_id, notes, created_at, updated_at
-                    FROM bootcamp_students.edgar_zdsteele_saved_research WHERE user_id = %s
+                    FROM edgar.saved_research WHERE user_id = %s
                     ORDER BY updated_at DESC LIMIT 50
                     """,
                     (ctx.user_id,),
@@ -339,11 +339,11 @@ def build_tools(ctx: ToolContext) -> list:
             m = meta[0] if meta and "_error" not in meta[0] else {}
             rows = lakebase.run_write(
                 """
-                INSERT INTO bootcamp_students.edgar_zdsteele_saved_filings
+                INSERT INTO edgar.saved_filings
                     (user_id, company_cik, filing_id, form, filed_at, note)
                 VALUES (%(uid)s, %(cik)s, %(acc)s, %(form)s, %(filed)s, %(note)s)
                 ON CONFLICT (user_id, filing_id)
-                    DO UPDATE SET note = COALESCE(EXCLUDED.note, bootcamp_students.edgar_zdsteele_saved_filings.note)
+                    DO UPDATE SET note = COALESCE(EXCLUDED.note, edgar.saved_filings.note)
                 RETURNING saved_filing_id
                 """,
                 {
@@ -370,7 +370,7 @@ def build_tools(ctx: ToolContext) -> list:
             wl_id = _default_watchlist_id(ctx, watchlist_name)
             lakebase.run_write(
                 """
-                INSERT INTO bootcamp_students.edgar_zdsteele_watchlist_companies (watchlist_id, cik, ticker)
+                INSERT INTO edgar.watchlist_companies (watchlist_id, cik, ticker)
                 VALUES (%(wl)s, %(cik)s, %(tk)s)
                 ON CONFLICT (watchlist_id, cik) DO UPDATE SET ticker = EXCLUDED.ticker
                 """,
@@ -392,7 +392,7 @@ def build_tools(ctx: ToolContext) -> list:
             cik = _resolve_cik(company) if company else None
             rows = lakebase.run_write(
                 """
-                INSERT INTO bootcamp_students.edgar_zdsteele_saved_research
+                INSERT INTO edgar.saved_research
                     (user_id, company_cik, filing_id, title, notes)
                 VALUES (%(uid)s, %(cik)s, %(acc)s, %(title)s, %(notes)s)
                 RETURNING research_id
@@ -413,7 +413,7 @@ def build_tools(ctx: ToolContext) -> list:
         ) as rec:
             n = lakebase.run_write(
                 """
-                UPDATE bootcamp_students.edgar_zdsteele_saved_research
+                UPDATE edgar.saved_research
                    SET notes = COALESCE(%(notes)s, notes),
                        title = COALESCE(%(title)s, title),
                        updated_at = now()
@@ -438,8 +438,8 @@ def build_tools(ctx: ToolContext) -> list:
                 return f"Could not resolve company '{company}'."
             n = lakebase.run_write(
                 """
-                DELETE FROM bootcamp_students.edgar_zdsteele_watchlist_companies wc
-                USING bootcamp_students.edgar_zdsteele_watchlists w
+                DELETE FROM edgar.watchlist_companies wc
+                USING edgar.watchlists w
                 WHERE wc.watchlist_id = w.watchlist_id
                   AND w.user_id = %(uid)s AND w.name = %(name)s AND wc.cik = %(cik)s
                 RETURNING wc.cik

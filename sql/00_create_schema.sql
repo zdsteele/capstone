@@ -1,9 +1,8 @@
 -- EDGAR Intelligence Platform — Lakebase schema.
 --
--- Per the bootcamp TA, the capstone uses the SHARED `bootcamp_students` schema
--- that already exists in the summer-bootcamp-2026-v2 Lakebase (do not make a
--- personal schema). It almost certainly already exists; this is a harmless
--- no-op if so. Every capstone table is prefixed `edgar_` so it can't collide
--- with another student's tables in the shared schema.
+-- Runs on the dedicated Lakebase instance `zdsteele-capstone` (its own project,
+-- scale-to-zero). Because the instance is private to this capstone, tables use
+-- a clean `edgar` schema with unprefixed names — nothing else lives here to
+-- collide with, and only these tables get replicated to Delta.
 
-CREATE SCHEMA IF NOT EXISTS bootcamp_students;
+CREATE SCHEMA IF NOT EXISTS edgar;

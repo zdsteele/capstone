@@ -48,37 +48,37 @@ spark.sql(
 # DBTITLE 1,Per-source: read new CDF rows -> gold_usage_events
 # source table -> (event_type, entity column expr, detail columns)
 SOURCES = {
-    "lb_edgar_zdsteele_agent_actions_history": dict(
+    "lb_edgar_agent_actions_history": dict(
         event_type_expr="concat('tool:', tool_name)",
         entity_expr="tool_name",
         detail_cols=["tool_kind", "status", "latency_ms", "args_json", "confidence"],
         ts_col="created_at",
     ),
-    "lb_edgar_zdsteele_saved_filings_history": dict(
+    "lb_edgar_saved_filings_history": dict(
         event_type_expr="'save_filing'",
         entity_expr="filing_id",
         detail_cols=["company_cik", "form", "note"],
         ts_col="created_at",
     ),
-    "lb_edgar_zdsteele_saved_research_history": dict(
+    "lb_edgar_saved_research_history": dict(
         event_type_expr="'research_note'",
         entity_expr="cast(research_id as string)",
         detail_cols=["company_cik", "filing_id", "title"],
         ts_col="created_at",
     ),
-    "lb_edgar_zdsteele_watchlist_companies_history": dict(
+    "lb_edgar_watchlist_companies_history": dict(
         event_type_expr="'watchlist_add'",
         entity_expr="cik",
         detail_cols=["ticker", "watchlist_id"],
         ts_col="added_at",
     ),
-    "lb_edgar_zdsteele_watchlists_history": dict(
+    "lb_edgar_watchlists_history": dict(
         event_type_expr="'watchlist_create'",
         entity_expr="cast(watchlist_id as string)",
         detail_cols=["name"],
         ts_col="created_at",
     ),
-    "lb_edgar_zdsteele_agent_conversations_history": dict(
+    "lb_edgar_agent_conversations_history": dict(
         event_type_expr="'conversation'",
         entity_expr="cast(conversation_id as string)",
         detail_cols=["title", "message_count"],
@@ -134,7 +134,7 @@ for src, cfg in SOURCES.items():
 # COMMAND ----------
 
 # DBTITLE 1,gold_agent_tool_stats + gold_agent_confidence  (latest row per action_id)
-ACTIONS_HIST = T("lb_edgar_zdsteele_agent_actions_history")
+ACTIONS_HIST = T("lb_edgar_agent_actions_history")
 if spark.catalog.tableExists(ACTIONS_HIST):
     latest_actions = (
         spark.table(ACTIONS_HIST)

@@ -6,7 +6,7 @@ Research Assistant), structured like ``ltap-cdc-day-2/app.py``: a Jinja shell +
 a JSON API, session sign-in with a strict username guard, all errors as JSON.
 
 Reads: Gold/Silver Delta via the SQL warehouse (``lib.warehouse``).
-Writes / auth / chat state: Lakebase ``bootcamp_students.edgar_zdsteele_*`` (``lib.lakebase``).
+Writes / auth / chat state: Lakebase ``edgar.*`` (``lib.lakebase``).
 The assistant runs the in-process LangGraph agent (``agent/graph.py``).
 """
 
@@ -100,7 +100,7 @@ def do_login():
 
     rows = lakebase.run_write(
         """
-        INSERT INTO bootcamp_students.edgar_zdsteele_users (username)
+        INSERT INTO edgar.users (username)
         VALUES (%s)
         ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username
         RETURNING user_id
@@ -307,8 +307,8 @@ def api_watchlist():
     rows = lakebase.run_query(
         """
         SELECT wc.cik, wc.ticker, wc.added_at, w.name AS watchlist
-        FROM bootcamp_students.edgar_zdsteele_watchlist_companies wc
-        JOIN bootcamp_students.edgar_zdsteele_watchlists w ON w.watchlist_id = wc.watchlist_id
+        FROM edgar.watchlist_companies wc
+        JOIN edgar.watchlists w ON w.watchlist_id = wc.watchlist_id
         WHERE w.user_id = %s ORDER BY wc.added_at DESC
         """,
         (u["user_id"],),
@@ -320,11 +320,11 @@ def api_watchlist():
 def api_saved():
     u = _require_user()
     filings = lakebase.run_query(
-        "SELECT filing_id, company_cik, form, filed_at, note, created_at FROM bootcamp_students.edgar_zdsteele_saved_filings WHERE user_id = %s ORDER BY created_at DESC",
+        "SELECT filing_id, company_cik, form, filed_at, note, created_at FROM edgar.saved_filings WHERE user_id = %s ORDER BY created_at DESC",
         (u["user_id"],),
     )
     research = lakebase.run_query(
-        "SELECT research_id, title, company_cik, filing_id, notes, updated_at FROM bootcamp_students.edgar_zdsteele_saved_research WHERE user_id = %s ORDER BY updated_at DESC",
+        "SELECT research_id, title, company_cik, filing_id, notes, updated_at FROM edgar.saved_research WHERE user_id = %s ORDER BY updated_at DESC",
         (u["user_id"],),
     )
     return jsonify({"filings": filings, "research": research})
@@ -346,7 +346,7 @@ def api_assistant_message():
 
     if not conversation_id:
         rows = lakebase.run_write(
-            "INSERT INTO bootcamp_students.edgar_zdsteele_agent_conversations (user_id, title) VALUES (%s, %s) RETURNING conversation_id",
+            "INSERT INTO edgar.agent_conversations (user_id, title) VALUES (%s, %s) RETURNING conversation_id",
             (u["user_id"], message[:60]),
         )
         conversation_id = rows[0]["conversation_id"]
@@ -369,7 +369,7 @@ def api_assistant_message():
 
     lakebase.run_write(
         """
-        INSERT INTO bootcamp_students.edgar_zdsteele_agent_actions
+        INSERT INTO edgar.agent_actions
             (conversation_id, user_id, tool_name, tool_kind, args_json, status, confidence, result_json)
         VALUES (%(conv)s, %(uid)s, 'final_answer', 'answer', %(args)s::jsonb, 'SUCCESS', %(conf)s, %(res)s::jsonb)
         """,
@@ -385,7 +385,7 @@ def api_assistant_message():
     )
     lakebase.run_write(
         """
-        UPDATE bootcamp_students.edgar_zdsteele_agent_conversations
+        UPDATE edgar.agent_conversations
            SET last_message_at = now(), message_count = message_count + 2
          WHERE conversation_id = %s
         """,
