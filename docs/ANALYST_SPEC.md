@@ -25,30 +25,42 @@ figure without labeling the difference.
 Primary question the agent answers: **Is this company financially healthy, is its
 position improving or deteriorating, and what should an investor watch next?**
 
-## What's built now (pilot — 5 companies, 10-K/10-Q/8-K)
+## Coverage — all 23 sections (pilot: 5 companies, 10-K / 10-Q / 8-K)
 
-| Spec section | Status | Where |
-|---|---|---|
-| Understand the business | partial | `gold_filing_intelligence` (exec summary, revenue commentary) + `silver_companies.sic` sector |
-| Income statement analysis + margins/growth | ✅ | `gold_company_financials`, `gold_financial_ratios` (nb 09) |
-| Cash flow analysis + FCF | ✅ (partial — no D&A/SBC line items) | `gold_financial_ratios` |
-| FCF bridge | partial | needs AR/inventory/AP/deferred-rev line items (not in companyfacts subset) |
-| Balance sheet health | ✅ (approx — no short-term debt / lease detail) | `gold_financial_ratios` |
-| Capital allocation | partial | needs dividends/buybacks line items |
-| Share count & dilution | approx (shares ≈ net_income / eps_diluted) | `gold_financial_ratios` |
-| Return on capital (ROIC) | approx (assumed 21% tax, rough invested capital) | `gold_financial_ratios` |
-| Working capital / CCC | ❌ | needs AR/inventory/AP |
-| Insider activity (Forms 3/4/5, 144) | ❌ not ingested | future |
-| Institutional ownership (13D/G/F) | ❌ not ingested | future |
-| Management & governance (DEF 14A) | ❌ not ingested | future |
-| Management credibility (guidance vs actual) | ❌ | future — needs guidance extraction + history |
-| Accounting quality / forensic | partial | `gold_filing_intelligence.notable_items` + `risk_themes` |
-| Filing-language diffing | ❌ | future — diff consecutive 10-Q/10-K risk sections |
-| Sector-specific KPIs | ❌ | future |
-| Valuation | ❌ | needs live market cap (out of scope — SEC-only) |
-| Trend engine (↑ → ↓ ⚠) | ✅ | `gold_financial_ratios.*_trend` |
-| Investor Health Score (0-100) | ✅ (dimensions we have data for) | `gold_company_health` (nb 10) |
-| Investor-friendly structured report | ✅ | `gold_company_health` (what_changed, cash_check, debt_check, shareholder_check, risks, bull/base/bear, watch_next, bottom_line) |
+Legend: ✅ built · ◑ partial (built on the data we ingest; approximations noted) ·
+⏳ scoped-future (needs a filing type we don't ingest yet).
+
+| # | Spec section | Status | Where / why |
+|---|---|---|---|
+| 1 | Filings to analyze | ◑ | 10-K / 10-Q / 8-K ingested for the pilot CIKs; multi-period history in `silver_financial_facts` (latest Q, prior Q, YoY Q, annual — TTM derived). DEF 14A / 3/4/5 / 144 / 13D/G/F / S-1 / 424B not ingested (§11–13, 18). Quarter-vs-annual guard: `silver_financial_facts.period_type` + never compared unlabeled. |
+| 2 | First understand the business | ◑ | `gold_filing_intelligence.executive_summary` + `revenue_commentary` (LLM over Items 1/1A/7); `silver_companies.sic` for sector. No structured segment / geo / customer-concentration extraction yet. |
+| 3 | Income statement analysis | ✅ | `gold_company_financials` (revenue, COGS, gross profit, opex, R&D, SG&A, operating income, interest, pretax, tax, net income, basic/diluted EPS & shares). `gold_financial_ratios` (nb 09): gross/operating/net margin, R&D % and SG&A % of revenue, revenue & EPS growth QoQ / YoY, operating-leverage flag, accel/stable/decel classification. |
+| 4 | Cash flow analysis | ✅ | `gold_financial_ratios`: OCF, capex, FCF, FCF margin, FCF growth, FCF conversion (FCF/NI), CFO conversion (OCF/NI), capex intensity. OCF/capex rebuilt to **discrete quarters** (Q2 = H1−Q1, Q3 = 9M−H1). No acquisitions / debt issuance / SBC line items (not in the companyfacts subset). |
+| 5 | Free cash flow bridge | ⏳ | Needs D&A, SBC, ΔAR, ΔInventory, ΔAP, ΔDeferred revenue as discrete line items — not in the companyfacts concepts we flatten. NI→OCF→FCF totals are present; the bridge decomposition is not. |
+| 6 | Balance sheet health | ◑ | `gold_financial_ratios`: cash, total debt, net debt, current ratio, debt/EBITDA, net-debt/EBITDA, interest coverage (EBIT/interest), goodwill % assets. Short-term vs long-term debt split and lease-liability detail are approximate; upcoming-maturity schedule not parsed. Leverage direction via `*_trend`. |
+| 7 | Capital allocation | ⏳ | Dividends-paid and buyback dollars are not in the ingested concept set, so payout / FCF-payout / buyback-yield are not computed. Qualitative capital-allocation notes come through `gold_filing_intelligence.notable_items`. |
+| 8 | Share count & dilution | ◑ | Diluted shares from `gold_company_financials`; YoY change + revenue/FCF/NI per diluted share computed. Buyback-dollars-vs-share-reduction and SBC-offset analysis need §7 data. |
+| 9 | Return on capital | ◑ | `gold_financial_ratios`: NOPAT = EBIT × (1 − effective tax, falls back to 21%), ROIC = NOPAT / invested capital (debt + equity − cash), annualized for quarters. Incremental ROIC via `roic_trend`. Cost-of-capital comparison omitted (no market data). |
+| 10 | Working capital / CCC | ⏳ | DSO / DIO / DPO / CCC need AR, inventory, AP — not ingested. |
+| 11 | Insider activity (3/4/5, 144) | ⏳ | Forms not ingested. |
+| 12 | Institutional ownership (13D/G/F) | ⏳ | Forms not ingested. |
+| 13 | Management & governance (DEF 14A) | ⏳ | Proxy not ingested → comp / incentive / board analysis out of scope for the pilot. |
+| 14 | Management credibility | ⏳ | Needs a guidance-extraction history (guidance vs actual over time). Not built. |
+| 15 | Accounting quality / forensic | ◑ | `gold_filing_intelligence.risk_themes` + `notable_items` surface impairments, restructuring, "one-time" repeats, restatement / material-weakness language from Items 1A/7/7A. No quantitative accrual/reserve ratio screen. Findings are described, not yet graded Normal/Watch/Elevated/Serious. |
+| 16 | Filing-language changes | ⏳ | Chunk table + Vector Search are in place (would support a consecutive-filing risk-section diff), but the period-over-period diff itself is not built. |
+| 17 | Sector-specific KPIs | ⏳ | Sector is classified (§2); per-sector KPI extraction (ARR/NRR, NIM/CET1, comps, backlog…) not built. |
+| 18 | Valuation | ⏳ | Deliberately out of scope — EV / P/E / EV-EBITDA / FCF-yield need live market data; this platform is SEC-filing-only. `gold_company_health` keeps COMPANY QUALITY strictly separate from valuation. |
+| 19 | Trend engine (↑ → ↓ ⚠) | ✅ | `gold_financial_ratios.*_trend` classifies every ratio up / stable / down / n-a on YoY change; health report leads with direction. |
+| 20 | Investor Health Score (0–100) | ✅ | `gold_company_health` (nb 10): per-dimension 0–100 for the dimensions we have data for — growth quality, profitability, cash generation, balance sheet, capital allocation, capital efficiency, financial health (composite) — plus overall score + label + direction. `ai_query` is **grounded on the computed ratios**, not free-form. Un-ingested dimensions (management/governance, accounting quality, valuation, sector-specific) are omitted, not faked. Composite never hides a flagged risk. |
+| 21 | Investor-friendly output | ✅ | `gold_company_health`: `overall_label` / `overall_score` / `direction`, `what_changed`, `numbers_that_matter`, `cash_check`, `debt_check`, `shareholder_check`, `accounting_check`, `management_says`, `risks`, `bull/base/bear_case`, `watch_next` (specific + thresholded), `bottom_line`. Rendered on the Dashboard → Company health tab and used by the agent's `get_company_health` tool. Management Check is partial (no insider/guidance data). |
+| 22 | Final normal-investor summary | ✅ | `bottom_line` (plain-language paragraph) + `primary_strength` / `primary_risk` / `key_metric_next_quarter` + `financial_health` + `direction`. Prompt forbids a Buy/Sell call or price target from the health score. |
+| 23 | Data-integrity rules | ✅ | Discipline section below is enforced in `agent/prompt.py` (fact vs calc vs management vs interpretation; "Not available from the reviewed filings" instead of fabrication; GAAP primary). Every ratio row in `gold_financial_ratios` carries `cik` / `accession` / `fiscal_year` / `fiscal_period` / `period_end` provenance. |
+
+**Summary:** 8 sections fully built (3, 4, 19, 20, 21, 22, 23, plus income/cash
+core of 1), 6 partial on ingested data (2, 6, 8, 9, 15, and the history depth of
+1), 9 scoped-future because they need filing types beyond 10-K/10-Q/8-K
+(5, 7, 10, 11, 12, 13, 14, 16, 17) or live market data (18). The full-spec text
+is preserved verbatim below so the target never drifts.
 
 ## Health score dimensions (nb 10)
 
