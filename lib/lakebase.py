@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 import uuid
 from contextlib import contextmanager
+from urllib.parse import quote
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -65,7 +66,12 @@ def _url() -> str:
     db = os.environ.get("PGDATABASE", "databricks_postgres")
     port = os.environ.get("PGPORT", "5432")
     pwd = os.environ.get("PGPASSWORD") or _mint_password(host, user)
-    return f"postgresql://{user}:{pwd}@{host}:{port}/{db}?sslmode=require"
+    # The Lakebase role is an email on the zdsteele-capstone instance, so the
+    # '@' (and any token special chars) must be percent-encoded in the URL.
+    return (
+        f"postgresql://{quote(user, safe='')}:{quote(pwd, safe='')}"
+        f"@{host}:{port}/{db}?sslmode=require"
+    )
 
 
 @contextmanager
