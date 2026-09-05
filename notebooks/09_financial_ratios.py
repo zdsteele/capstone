@@ -36,8 +36,56 @@ def safe_div(a, b):
 
 # COMMAND ----------
 
+# DBTITLE 1,Discrete quarterly cash flow (filers report OCF/capex cumulatively)
+# companyfacts gives OCF/capex as YTD (3/6/9/12-mo). gold_company_financials kept
+# only the 3-mo value, so Q2/Q3 come out null. Rebuild discrete quarters from
+# silver_financial_facts: Q2 = H1 - Q1, Q3 = 9M - H1, FY = annual.
+_CF = {
+    "ocf": ["NetCashProvidedByUsedInOperatingActivities",
+            "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"],
+    "capex": ["PaymentsToAcquirePropertyPlantAndEquipment"],
+}
+cf_map = spark.createDataFrame(
+    [(m, c, p) for m, cs in _CF.items() for p, c in enumerate(cs)],
+    ["metric", "concept", "prio"],
+)
+_cf_wide = (
+    spark.table(T("silver_financial_facts")).join(cf_map, "concept")
+    .filter(F.col("period_type").isin("quarter", "half", "ytd9", "annual"))
+    .withColumn("rn", F.row_number().over(
+        Window.partitionBy("cik", "fiscal_year", "metric", "period_type")
+        .orderBy(F.col("prio").asc(), F.col("filed").desc(), F.col("period_end").desc())))
+    .filter(F.col("rn") == 1)
+    .groupBy("cik", "fiscal_year", "metric")
+    .pivot("period_type", ["quarter", "half", "ytd9", "annual"]).agg(F.first("value"))
+)
+_discrete = _cf_wide.select(
+    "cik", "fiscal_year", "metric",
+    F.explode(F.array(
+        F.struct(F.lit("Q1").alias("fp"), F.col("quarter").alias("val")),
+        F.struct(F.lit("Q2").alias("fp"), (F.col("half") - F.col("quarter")).alias("val")),
+        F.struct(F.lit("Q3").alias("fp"), (F.col("ytd9") - F.col("half")).alias("val")),
+        F.struct(F.lit("FY").alias("fp"), F.col("annual").alias("val")),
+    )).alias("e"),
+).select("cik", "fiscal_year", F.col("e.fp").alias("fiscal_period"), "metric", F.col("e.val").alias("val"))
+
+disc_ocf = _discrete.filter(F.col("metric") == "ocf").select(
+    "cik", "fiscal_year", "fiscal_period", F.col("val").alias("ocf_discrete"))
+disc_capex = _discrete.filter(F.col("metric") == "capex").select(
+    "cik", "fiscal_year", "fiscal_period", F.col("val").alias("capex_discrete"))
+
+# COMMAND ----------
+
 # DBTITLE 1,Per-period ratios
-g = spark.table(T("gold_company_financials"))
+g = (
+    spark.table(T("gold_company_financials"))
+    .join(disc_ocf, ["cik", "fiscal_year", "fiscal_period"], "left")
+    .join(disc_capex, ["cik", "fiscal_year", "fiscal_period"], "left")
+    .withColumn("operating_cash_flow", F.coalesce("ocf_discrete", "operating_cash_flow"))
+    .withColumn("capital_expenditures", F.coalesce("capex_discrete", "capital_expenditures"))
+    # annualization factor: quarterly flow ratios x4 so ROIC/ROE compare to FY
+    .withColumn("_ann", F.when(F.col("fiscal_period") == "FY", F.lit(1.0)).otherwise(F.lit(4.0)))
+)
 
 r = (
     g.withColumn("fcf", F.col("operating_cash_flow") - F.col("capital_expenditures"))
@@ -53,8 +101,18 @@ r = (
     .withColumn("net_debt", F.col("long_term_debt") - F.col("cash_and_equivalents"))
     .withColumn("debt_to_equity", safe_div("total_liabilities", "stockholders_equity"))
     .withColumn("equity_ratio", safe_div("stockholders_equity", "total_assets"))
-    .withColumn("return_on_equity", safe_div("net_income", "stockholders_equity"))
-    .withColumn("return_on_assets", safe_div("net_income", "total_assets"))
+    # ROE / ROA / ROIC annualized (quarterly earnings x4) so trends & the FY row
+    # are on the same basis
+    .withColumn(
+        "return_on_equity",
+        F.when((F.col("stockholders_equity").isNotNull()) & (F.col("stockholders_equity") != 0),
+               F.col("net_income") * F.col("_ann") / F.col("stockholders_equity")),
+    )
+    .withColumn(
+        "return_on_assets",
+        F.when((F.col("total_assets").isNotNull()) & (F.col("total_assets") != 0),
+               F.col("net_income") * F.col("_ann") / F.col("total_assets")),
+    )
     .withColumn(
         "diluted_shares_approx",
         F.when(F.col("eps_diluted").isNotNull() & (F.col("eps_diluted") != 0),
@@ -67,7 +125,7 @@ r = (
     .withColumn(
         "roic_approx",
         F.when(F.col("invested_capital_approx") > 0,
-               (F.col("operating_income") * (1 - TAX)) / F.col("invested_capital_approx")),
+               (F.col("operating_income") * F.col("_ann") * (1 - TAX)) / F.col("invested_capital_approx")),
     )
     .withColumn("revenue_per_share", safe_div("revenue", "diluted_shares_approx"))
     .withColumn("fcf_per_share", safe_div("fcf", "diluted_shares_approx"))

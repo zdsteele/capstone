@@ -80,21 +80,25 @@ PROMPT = (
     "You are a senior equity research analyst. Analyze the company below using ONLY "
     "the figures provided (they were computed from its SEC filings — do not invent "
     "any number; if something is missing say so). Separate reported facts, "
-    "calculated metrics, management statements, and your interpretation. Fill every "
-    "field of the required structure:\n"
-    "- scores.*: integers 0-100.  overall_score: integer 0-100.\n"
-    '- overall_label: "Strong" | "Healthy" | "Mixed" | "Weak" | "Distressed".\n'
-    '- direction: "Improving" | "Stable" | "Deteriorating".\n'
-    "- what_changed: 3-5 short strings, each a development + why it matters.\n"
-    "- numbers_that_matter: one plain-text block, 'metric: latest vs prior-yr (trend)' per line.\n"
-    "- cash_check / debt_check / shareholder_check: 2-4 sentences each; note any missing data.\n"
-    "- accounting_check: 1-3 short findings, each prefixed GREEN / YELLOW / RED.\n"
-    "- management_says: management's claims, then whether the numbers support them.\n"
-    "- risks: 3-5 short measurable risk strings.\n"
-    "- bull_case / base_case / bear_case: one short paragraph each.\n"
-    "- watch_next: 3-5 strings, each a specific metric + threshold.\n"
-    "- bottom_line: 120-220 words, plain language.\n"
-    "- primary_strength / primary_risk / key_metric_next_quarter: one sentence each.\n\n"
+    "calculated metrics, management statements, and your interpretation.\n\n"
+    "Respond with ONLY a single JSON object — no markdown fences, no text before or "
+    "after. Every string value must be ONE line (no literal newline characters). "
+    "Keys:\n"
+    "- scores: object of integers 0-100: growth_quality, profitability, cash_generation, "
+    "balance_sheet, capital_allocation, capital_efficiency, financial_health\n"
+    "- overall_score: integer 0-100\n"
+    '- overall_label: "Strong" | "Healthy" | "Mixed" | "Weak" | "Distressed"\n'
+    '- direction: "Improving" | "Stable" | "Deteriorating"\n'
+    "- what_changed: array of 3-5 strings (development + why it matters)\n"
+    "- numbers_that_matter: array of strings, one per line 'metric: latest vs prior-yr (trend)'\n"
+    "- cash_check, debt_check, shareholder_check: string, 2-4 sentences; note missing data\n"
+    "- accounting_check: string, 1-3 findings each prefixed GREEN/YELLOW/RED\n"
+    "- management_says: string — management's claims, then whether the numbers support them\n"
+    "- risks: array of 3-5 measurable risk strings\n"
+    "- bull_case, base_case, bear_case: string, one short paragraph each\n"
+    "- watch_next: array of 3-5 strings, each a specific metric + threshold\n"
+    "- bottom_line: string, 120-220 words, plain language\n"
+    "- primary_strength, primary_risk, key_metric_next_quarter: string, one sentence each\n\n"
 )
 
 HEALTH_SCHEMA = StructType([
@@ -105,7 +109,7 @@ HEALTH_SCHEMA = StructType([
     StructField("overall_label", StringType()),
     StructField("direction", StringType()),
     StructField("what_changed", ArrayType(StringType())),
-    StructField("numbers_that_matter", StringType()),
+    StructField("numbers_that_matter", ArrayType(StringType())),
     StructField("cash_check", StringType()),
     StructField("debt_check", StringType()),
     StructField("shareholder_check", StringType()),
@@ -143,16 +147,16 @@ print("companies to score:", pdf.count())
 
 # COMMAND ----------
 
-# DBTITLE 1,ai_query (json_object) -> parse -> gold_company_health
-# responseFormat 'json_object' guarantees a single valid JSON object (no markdown
-# fences, escaped newlines). Then from_json with the flat schema — arrays where
-# arrays belong so a list value doesn't null the row.
-scored = pdf.withColumn(
-    "raw", F.expr(f"ai_query('{LLM}', prompt, responseFormat => 'json_object')")
-)
+# DBTITLE 1,ai_query -> parse -> gold_company_health
+# Plain ai_query (this build's responseFormat only accepts a DDL and returns a
+# string anyway). Prompt asks for a single JSON object with no literal newlines;
+# regex-extract the braces (handles any stray fences) then from_json. Array-typed
+# list fields so a JSON array doesn't null the row.
+scored = pdf.withColumn("raw", F.expr(f"ai_query('{LLM}', prompt)"))
 
 parsed = (
-    scored.withColumn("p", F.from_json("raw", HEALTH_SCHEMA))
+    scored.withColumn("json_str", F.regexp_extract("raw", r"\{[\s\S]*\}", 0))
+    .withColumn("p", F.from_json("json_str", HEALTH_SCHEMA))
     .select(
         "cik", "ticker", "name",
         F.col("p.overall_score").alias("overall_score"),
