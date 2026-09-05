@@ -15,11 +15,11 @@
   <div class="cols">
     <div>
       <h3>Headline metrics</h3>
-      <table id="co-metrics" class="grid"></table>
+      <div class="tbl"><table id="co-metrics" class="grid"></table></div>
     </div>
     <div>
       <h3>Recent filings</h3>
-      <table id="co-filings" class="grid"></table>
+      <div class="tbl"><table id="co-filings" class="grid left"></table></div>
     </div>
   </div>
 </section>
@@ -49,13 +49,14 @@ async function loadCompany(cik) {
   document.getElementById('co-meta').textContent =
     `CIK ${d.company.cik} · SIC ${d.company.sic || '—'} ${d.company.sic_description || ''}`;
   document.getElementById('co-metrics').innerHTML =
-    '<tr><th>Period</th><th>Revenue</th><th>Net income</th><th>EPS (dil.)</th></tr>' +
+    '<thead><tr><th>Period</th><th>Revenue</th><th>Net income</th><th>EPS dil.</th></tr></thead><tbody>' +
     d.metrics.map(m => `<tr><td>${m.fiscal_year} ${m.fiscal_period}</td>
-      <td>${fmtUSD(m.revenue)}</td><td>${fmtUSD(m.net_income)}</td><td>${m.eps_diluted ?? '—'}</td></tr>`).join('');
+      <td>${fmtUSD(m.revenue)}</td><td>${fmtUSD(m.net_income)}</td><td>${m.eps_diluted ?? '—'}</td></tr>`).join('') + '</tbody>';
   document.getElementById('co-filings').innerHTML =
-    '<tr><th>Form</th><th>Filed</th><th>Period</th><th></th></tr>' +
-    d.filings.map(f => `<tr><td>${f.form}</td><td>${f.filing_date}</td><td>${f.report_date || '—'}</td>
-      <td><a href="/filing/${f.accession}">open</a></td></tr>`).join('');
+    '<thead><tr><th>Form</th><th>Filed</th><th>Period</th><th></th></tr></thead><tbody>' +
+    d.filings.map(f => `<tr><td>${f.form}</td><td class="num">${(f.filing_date||'').slice(0,10)}</td>
+      <td class="num">${(f.report_date || '—').slice(0,10)}</td>
+      <td><a href="/filing/${f.accession}">open →</a></td></tr>`).join('') + '</tbody>';
 
   const ix = await getJSON(`/api/intelligence?ticker=${d.company.ticker || ''}`);
   const b = (ix.briefings || [])[0];

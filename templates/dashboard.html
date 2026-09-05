@@ -4,14 +4,18 @@
 {% block content %}
 <section class="pane">
   <h1>Financial Dashboard</h1>
+  <p class="sub">GAAP figures from XBRL company facts. Ratios and the health score are computed; the report is AI-generated and grounded on those numbers.</p>
+
+  <div class="inputrow">
+    <input id="d-company" class="search" placeholder="Ticker or CIK — e.g. AAPL, GOOGL, 0000320193" />
+    <button id="d-load">Load</button>
+  </div>
+
   <div class="tabs">
     <button class="tab active" data-tab="financials">Financials</button>
     <button class="tab" data-tab="health">Company health</button>
     <button class="tab" data-tab="activity">Platform activity</button>
   </div>
-
-  <input id="d-company" class="search" placeholder="Ticker or CIK (e.g. AAPL)" />
-  <button id="d-load">Load</button>
 
   <div id="tab-financials">
     <div class="cols">
@@ -21,29 +25,32 @@
       </div>
       <div>
         <h3>Latest period</h3>
-        <table id="d-latest" class="grid"></table>
+        <table id="d-latest" class="kv"></table>
       </div>
     </div>
     <h3>All periods</h3>
-    <div class="scroll"><table id="d-financials" class="grid"></table></div>
+    <div class="tbl"><table id="d-financials" class="grid"></table></div>
   </div>
 
   <div id="tab-health" hidden>
     <div id="h-score"></div>
     <div id="h-scores" class="scoregrid"></div>
-    <div id="h-trends" class="scroll"></div>
+    <div class="tbl" id="h-trends-wrap"><table id="h-trends" class="grid"></table></div>
     <div id="h-report"></div>
     <p class="muted" id="h-note"></p>
   </div>
 
   <div id="tab-activity" hidden>
     <h3>AI agent tool usage</h3>
-    <table id="a-tools" class="grid"></table>
+    <div class="tbl"><table id="a-tools" class="grid"></table></div>
     <h3>Usage funnel</h3>
-    <table id="a-events" class="grid"></table>
+    <div class="tbl"><table id="a-events" class="grid"></table></div>
     <p class="muted" id="a-note"></p>
   </div>
 </section>
+{% endblock %}
+
+{% block script %}
 <script>
 let currentCik = null;
 
@@ -75,13 +82,16 @@ document.getElementById('d-company').addEventListener('keydown', e => { if (e.ke
 
 async function loadFinancials(cik) {
   const d = await getJSON(`/api/dashboard/${cik}`);
-  const rev = d.revenue || [];
+  const rev = (d.revenue || []).filter(r => r.fiscal_period !== 'FY');
   const max = Math.max(1, ...rev.map(r => Number(r.revenue) || 0));
-  document.getElementById('d-revenue').innerHTML = rev.map(r => `
-    <div class="bar"><span class="lbl">${r.fiscal_year} ${r.fiscal_period}</span>
+  document.getElementById('d-revenue').innerHTML = rev.map(r => {
+    const yoy = r.yoy_pct;
+    const cls = yoy == null ? '' : yoy >= 0 ? 'pos' : 'neg';
+    return `<div class="bar"><span class="lbl">${r.fiscal_year} ${r.fiscal_period}</span>
       <span class="track"><span class="fill" style="width:${(Number(r.revenue)||0)/max*100}%"></span></span>
-      <span class="val">${fmtUSD(r.revenue)} ${r.yoy_pct != null ? `(${r.yoy_pct > 0 ? '+' : ''}${r.yoy_pct}% YoY)` : ''}</span>
-    </div>`).join('');
+      <span class="val">${fmtUSD(r.revenue)} ${yoy != null ? `<span class="${cls}">${yoy > 0 ? '+' : ''}${yoy}%</span>` : ''}</span>
+    </div>`;
+  }).join('') || '<p class="muted">No quarterly revenue.</p>';
 
   const fin = d.financials || [];
   const last = fin[fin.length - 1] || {};
@@ -92,30 +102,46 @@ async function loadFinancials(cik) {
   }).map(([k, v]) => `<tr><th>${k}</th><td>${k.includes('EPS') ? (v ?? '—') : fmtUSD(v)}</td></tr>`).join('');
 
   document.getElementById('d-financials').innerHTML =
-    '<tr><th>Period</th><th>Revenue</th><th>Op income</th><th>Net income</th><th>Assets</th><th>OCF</th></tr>' +
+    '<thead><tr><th>Period</th><th>Revenue</th><th>Op&nbsp;income</th><th>Net&nbsp;income</th><th>Assets</th><th>Op&nbsp;cash&nbsp;flow</th></tr></thead><tbody>' +
     fin.map(r => `<tr><td>${r.fiscal_year} ${r.fiscal_period}</td><td>${fmtUSD(r.revenue)}</td>
       <td>${fmtUSD(r.operating_income)}</td><td>${fmtUSD(r.net_income)}</td>
-      <td>${fmtUSD(r.total_assets)}</td><td>${fmtUSD(r.operating_cash_flow)}</td></tr>`).join('');
+      <td>${fmtUSD(r.total_assets)}</td><td>${fmtUSD(r.operating_cash_flow)}</td></tr>`).join('') + '</tbody>';
 }
 
 function pct(v) { return v == null ? '—' : (v * 100).toFixed(1) + '%'; }
-function trendMark(t) { return t === 'up' ? '▲' : t === 'down' ? '▼' : t === 'stable' ? '▬' : ''; }
+function tmark(t) {
+  if (t === 'up') return '<span class="pos">▲</span>';
+  if (t === 'down') return '<span class="neg">▼</span>';
+  if (t === 'stable') return '<span class="muted">▬</span>';
+  return '';
+}
 
 async function loadHealth(cik) {
   const d = await getJSON(`/api/health/${cik}`);
   const h = d.health;
   const note = document.getElementById('h-note');
-  if (!h) { document.getElementById('h-score').innerHTML = ''; note.textContent = d.note || 'No health assessment yet — run notebooks 09 + 10.'; return; }
-  note.textContent = `Generated by ${h.model || 'the analyst agent'}`;
+  const wrap = document.getElementById('h-trends-wrap');
+  if (!h) {
+    document.getElementById('h-score').innerHTML = '';
+    document.getElementById('h-scores').innerHTML = '';
+    document.getElementById('h-report').innerHTML = '';
+    wrap.hidden = true;
+    note.textContent = d.note || 'No health assessment yet — run notebooks 09 + 10.';
+    return;
+  }
+  wrap.hidden = false;
+  note.textContent = `AI assessment · ${h.model || 'analyst agent'}`;
 
   const label = (h.overall_label || '').toLowerCase();
   document.getElementById('h-score').innerHTML = `
     <div class="healthhead">
       <span class="bigscore ${label}">${h.overall_score ?? '—'}<small>/100</small></span>
-      <div><strong>${h.overall_label || ''}</strong> · trend: ${h.direction || ''}
-        <div class="muted">${h.primary_strength || ''}</div>
-        <div class="muted">Risk: ${h.primary_risk || ''}</div>
-        <div class="muted">Watch: ${h.key_metric_next_quarter || ''}</div>
+      <div>
+        <strong>${h.overall_label || ''}</strong>
+        <span class="tone ${(h.direction || '').toLowerCase()}">${h.direction || ''}</span>
+        <span class="muted"><b>Strength:</b> ${h.primary_strength || '—'}</span>
+        <span class="muted"><b>Risk:</b> ${h.primary_risk || '—'}</span>
+        <span class="muted"><b>Watch:</b> ${h.key_metric_next_quarter || '—'}</span>
       </div>
     </div>`;
 
@@ -128,36 +154,37 @@ async function loadHealth(cik) {
 
   const rr = d.ratios || [];
   document.getElementById('h-trends').innerHTML =
-    '<table class="grid"><tr><th>Period</th><th>Rev growth</th><th>Op margin</th><th>FCF margin</th><th>ROIC≈</th><th>Net debt</th></tr>' +
+    '<thead><tr><th>Period</th><th>Rev&nbsp;growth</th><th>Op&nbsp;margin</th><th>FCF&nbsp;margin</th><th>ROIC&nbsp;≈</th><th>Net&nbsp;debt</th></tr></thead><tbody>' +
     rr.map(r => `<tr><td>${r.fiscal_year} ${r.fiscal_period}</td>
       <td>${pct(r.revenue_growth_yoy)}</td>
-      <td>${pct(r.operating_margin)} ${trendMark(r.operating_margin_trend)}</td>
-      <td>${pct(r.fcf_margin)} ${trendMark(r.fcf_margin_trend)}</td>
-      <td>${pct(r.roic_approx)} ${trendMark(r.roic_approx_trend)}</td>
-      <td>${fmtUSD(r.net_debt)} ${trendMark(r.net_debt_trend)}</td></tr>`).join('') + '</table>';
+      <td>${pct(r.operating_margin)} ${tmark(r.operating_margin_trend)}</td>
+      <td>${pct(r.fcf_margin)} ${tmark(r.fcf_margin_trend)}</td>
+      <td>${pct(r.roic_approx)} ${tmark(r.roic_approx_trend)}</td>
+      <td>${fmtUSD(r.net_debt)} ${tmark(r.net_debt_trend)}</td></tr>`).join('') + '</tbody>';
 
-  const sec = (t, v) => v ? `<h3>${t}</h3><div class="report">${(v || '').replace(/\n/g, '<br>')}</div>` : '';
-  const list = (t, arr) => (arr && arr.length) ? `<h3>${t}</h3><ul>${arr.map(x => `<li>${x}</li>`).join('')}</ul>` : '';
+  const sec = (t, v) => v ? `<h3>${t}</h3><div class="report">${mdInline(v)}</div>` : '';
+  const list = (t, arr) => (arr && arr.length)
+    ? `<h3>${t}</h3><ul>${arr.map(x => `<li>${x}</li>`).join('')}</ul>` : '';
   document.getElementById('h-report').innerHTML =
     list('What changed', h.what_changed) + sec('Cash check', h.cash_check) +
     sec('Debt check', h.debt_check) + sec('Shareholder check', h.shareholder_check) +
     sec('Accounting check', h.accounting_check) +
     sec('What management is saying', h.management_says) +
-    (h.risks ? `<h3>Risks</h3><ul>${(h.risks || []).map(x => `<li>${x}</li>`).join('')}</ul>` : '') +
+    list('Risks', h.risks) +
     sec('Bull case', h.bull_case) + sec('Base case', h.base_case) + sec('Bear case', h.bear_case) +
-    (h.watch_next ? `<h3>Watch next quarter</h3><ul>${(h.watch_next || []).map(x => `<li>${x}</li>`).join('')}</ul>` : '') +
+    list('Watch next quarter', h.watch_next) +
     sec('Bottom line', h.bottom_line);
 }
 
 async function loadActivity() {
   const d = await getJSON('/api/dashboard/activity');
   document.getElementById('a-tools').innerHTML =
-    '<tr><th>Tool</th><th>Calls</th><th>Success rate</th></tr>' +
-    (d.tool_stats || []).map(t => `<tr><td>${t.tool_name}</td><td>${t.call_count}</td>
-      <td>${t.success_rate != null ? (t.success_rate * 100).toFixed(0) + '%' : '—'}</td></tr>`).join('');
+    '<thead><tr><th>Tool</th><th>Calls</th><th>Success&nbsp;rate</th></tr></thead><tbody>' +
+    (d.tool_stats || []).map(t => `<tr><td style="text-align:left">${t.tool_name}</td><td>${t.call_count}</td>
+      <td>${t.success_rate != null ? (t.success_rate * 100).toFixed(0) + '%' : '—'}</td></tr>`).join('') + '</tbody>';
   document.getElementById('a-events').innerHTML =
-    '<tr><th>Event</th><th>Count</th></tr>' +
-    (d.events || []).map(e => `<tr><td>${e.event_type}</td><td>${e.event_count}</td></tr>`).join('');
+    '<thead><tr><th>Event</th><th>Count</th></tr></thead><tbody>' +
+    (d.events || []).map(e => `<tr><td style="text-align:left">${e.event_type}</td><td>${e.event_count}</td></tr>`).join('') + '</tbody>';
   document.getElementById('a-note').textContent = d.note || '';
 }
 </script>

@@ -4,13 +4,16 @@
 {% block content %}
 <section class="pane chat">
   <h1>AI Research Assistant</h1>
-  <p class="muted">Ask about filings and financials, or tell it to save a filing, add to your watchlist, or write a research note.</p>
+  <p class="sub">A tool-calling analyst agent. It looks up filings, financials, ratios and the health score, searches filing text, and can save filings, update your watchlist, or write research notes. Every answer ends with a confidence rating.</p>
   <div id="log" class="chatlog"></div>
   <form id="chatform" class="chatbar">
-    <input id="msg" placeholder="e.g. Summarize Alphabet's most recent 10-Q revenue vs operating expenses" autofocus />
+    <input id="msg" placeholder="e.g. Is Alphabet financially healthy, and what should I watch next quarter?" autofocus />
     <button type="submit" id="send">Send</button>
   </form>
 </section>
+{% endblock %}
+
+{% block script %}
 <script>
 const log = document.getElementById('log');
 const form = document.getElementById('chatform');
@@ -21,18 +24,25 @@ let conversationId = null;
 function bubble(role, text, tools, confidence, confidenceReason) {
   const el = document.createElement('div');
   el.className = 'bubble ' + role;
-  el.textContent = text;
-  if (confidence) {
-    const c = document.createElement('div');
-    c.className = 'confidence ' + confidence;
-    c.textContent = 'confidence: ' + confidence + (confidenceReason ? ' — ' + confidenceReason : '');
-    el.appendChild(c);
-  }
-  if (tools && tools.length) {
-    const t = document.createElement('div');
-    t.className = 'tools';
-    t.textContent = 'tools: ' + tools.join(', ');
-    el.appendChild(t);
+  if (role === 'assistant') el.innerHTML = renderMarkdown(text);
+  else el.textContent = text;
+
+  if (confidence || (tools && tools.length)) {
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    if (confidence) {
+      const c = document.createElement('span');
+      c.className = 'confidence ' + confidence;
+      c.textContent = confidence + (confidenceReason ? ' · ' + confidenceReason : '');
+      meta.appendChild(c);
+    }
+    if (tools && tools.length) {
+      const t = document.createElement('span');
+      t.className = 'tools';
+      t.textContent = 'tools: ' + [...new Set(tools)].join(', ');
+      meta.appendChild(t);
+    }
+    el.appendChild(meta);
   }
   log.appendChild(el);
   log.scrollTop = log.scrollHeight;

@@ -23,13 +23,13 @@
     <div>
       <h3>Sections</h3>
       <ul id="f-sections" class="list"></ul>
-      <div id="f-sectext" class="sectext"></div>
+      <div id="f-sectext" class="sectext" hidden></div>
     </div>
     <div>
       <h3>Exhibits</h3>
-      <table id="f-exhibits" class="grid"></table>
+      <div class="tbl"><table id="f-exhibits" class="grid left"></table></div>
       <h3>XBRL facts <span class="muted">(sample)</span></h3>
-      <table id="f-facts" class="grid"></table>
+      <div class="tbl"><table id="f-facts" class="grid"></table></div>
     </div>
   </div>
 </section>
@@ -62,23 +62,27 @@ if (ACC) (async () => {
       (intel.risk_themes || []).map(r => `<span class="chip">${r}</span>`).join('');
   }
 
-  document.getElementById('f-sections').innerHTML = (d.sections || []).map(s =>
+  const secs = (d.sections || []).filter(s => (s.char_len || 0) > 200);
+  document.getElementById('f-sections').innerHTML = secs.map(s =>
     `<li><button class="linkbtn" data-i="${s.section_index}">${s.section}${s.heading ? ' — ' + s.heading : ''}</button>
-     <span class="muted">${s.char_len} chars</span></li>`).join('');
+     <span class="muted num">${(s.char_len / 1000).toFixed(1)}k chars</span></li>`).join('')
+    || '<li class="muted">No substantive sections parsed.</li>';
   document.querySelectorAll('#f-sections button').forEach(b => b.addEventListener('click', async () => {
     const s = await getJSON(`/api/section/${ACC}/${b.dataset.i}`);
-    document.getElementById('f-sectext').textContent = s.text || '(empty)';
+    const box = document.getElementById('f-sectext');
+    box.hidden = false;
+    box.textContent = s.text || '(empty)';
   }));
 
   document.getElementById('f-exhibits').innerHTML =
-    '<tr><th>Seq</th><th>Type</th><th>File</th><th>Description</th></tr>' +
-    (d.exhibits || []).map(e => `<tr><td>${e.sequence || ''}</td><td>${e.doc_type || ''}</td>
-      <td>${e.filename || ''}</td><td>${e.description || ''}</td></tr>`).join('');
+    '<thead><tr><th>Seq</th><th>Type</th><th>File</th><th>Description</th></tr></thead><tbody>' +
+    (d.exhibits || []).map(e => `<tr><td class="num">${e.sequence || ''}</td><td>${e.doc_type || ''}</td>
+      <td>${e.filename || ''}</td><td>${e.description || ''}</td></tr>`).join('') + '</tbody>';
 
   document.getElementById('f-facts').innerHTML =
-    '<tr><th>Concept</th><th>Period end</th><th>Unit</th><th>Value</th></tr>' +
-    (d.facts || []).map(x => `<tr><td>${x.concept}</td><td>${x.period_end || ''}</td>
-      <td>${x.unit}</td><td>${fmtNum(x.value)}</td></tr>`).join('');
+    '<thead><tr><th>Concept</th><th>Period end</th><th>Unit</th><th>Value</th></tr></thead><tbody>' +
+    (d.facts || []).map(x => `<tr><td style="text-align:left">${x.concept}</td><td>${x.period_end || ''}</td>
+      <td>${x.unit}</td><td>${fmtNum(x.value)}</td></tr>`).join('') + '</tbody>';
  } catch (err) {
    document.getElementById('f-meta').innerHTML =
      `<span class="error">Failed to load filing: ${err.message}</span>`;
