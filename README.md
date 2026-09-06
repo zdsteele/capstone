@@ -1,73 +1,92 @@
 # EDGAR Intelligence Platform
 
-SEC filing search, analytics, and an AI research assistant — built on Databricks.
-Capstone for the DataExpert.io × Databricks bootcamp.
+A senior-analyst-grade tool for reading SEC filings. Ingests EDGAR + market data
+through a Spark medallion pipeline, computes the full analyst-spec ratio set,
+runs LLM passes for filing briefings / 8-K events / language diffs / an Investor
+Health Score, serves it through a Flask app with an in-process tool-calling
+agent, and captures app activity back into the lakehouse via reverse Change
+Data Feed. Capstone for the DataExpert.io × Databricks bootcamp.
 
-Turns SEC EDGAR from a document repository into a searchable financial data
-platform: a Spark medallion pipeline over EDGAR + market data, a Lakebase
-(Postgres) operational store, an action-taking tool-calling AI agent, a
-reverse-Change-Data-Feed analytics pipeline, and a deployed Databricks App.
+## What it does
+
+- **Search ~470 S&P 500 companies**, ranked by an AI Investor Health Score
+- **Open any filing** → extracted financials, parsed sections, an AI briefing
+  (10-K/10-Q) or an 8-K event summary, and a "what changed vs the prior filing"
+  diff
+- **Company dashboard** → the health verdict first, then financials, computed
+  ratios (margins, FCF + the FCF bridge, DSO/DIO/DPO/CCC, ROIC, leverage,
+  payout), and market valuation (P/E, EV/EBITDA, FCF yield, shareholder yield)
+- **Research Assistant** → a tool-calling agent (21 tools) that reads filings,
+  screens the universe, runs the numbers, cites every source, and can save
+  filings / watchlists / research notes
+- **My Workspace** → your saved filings, watchlist, notes
+- **Platform activity** → usage analytics built from the reverse-CDC loop
 
 ## Architecture
 
 ```
-SEC EDGAR (Submissions API, XBRL companyfacts, filing archives, full .txt)
-yfinance daily bars
-        │  rate-limited PySpark ingestion (lib/sec_client.py)
+SEC EDGAR (submissions, XBRL companyfacts, filing HTML, full .txt)  +  yfinance bars
+        │  rate-limited PySpark ingest — lib/sec_client.py, incremental MERGE
         ▼
-Bronze Delta  bootcamp_students.zdsteele_capstone.bronze_*   + Volume bronze_edgar_raw
-        ▼  parse XBRL facts, HTML → sections, chunk text, entity-resolve
-Silver Delta  silver_companies / silver_filings / silver_financial_facts / silver_filing_sections / silver_filing_text_chunks
-        ▼  GAAP concepts → metrics, YoY/QoQ
-Gold Delta    gold_company_financials / gold_revenue_history / gold_*_metrics / gold_filing_activity / gold_company_comparisons
-        │  read via SQL warehouse (lib/warehouse.py)  — no Synced Tables to hand-create
+Bronze Delta   bootcamp_students.zdsteele_capstone.bronze_*   + Volume bronze_edgar_raw
+        ▼  distributed mapInPandas: explode XBRL (~46 concepts), HTML→sections, chunk text
+Silver Delta   silver_financial_facts (millions of rows) / silver_filings / silver_filing_sections / silver_filing_text_chunks
+        ▼  concept→metric mapping, ratio + trend engine, valuation, LLM passes (ai_query)
+Gold Delta     gold_company_financials / gold_financial_ratios / gold_valuation /
+               gold_filing_intelligence / gold_8k_events / gold_business_profile /
+               gold_filing_language_changes / gold_company_health
+        │  read-only via SQL warehouse — lib/warehouse.py
         ▼
-Flask app + in-process LangGraph agent (retrieval tools)
-        │  agent write tools + app writes INSERT into Lakebase
-edgar.{saved_filings, watchlist_companies, saved_research, agent_conversations, agent_actions}
-        │  Lakebase Change Data Feed (reverse Synced Tables — the one UI step)
+Flask app + in-process LangGraph agent
+        │  agent write tools + login  →  INSERT into Lakebase (Postgres, schema edgar)
+edgar.{users, watchlists, watchlist_companies, saved_filings, saved_research, agent_conversations, agent_actions}
+        │  Lakebase Change Data Feed  (the one manual UI step)
         ▼
-Delta  lb_*_history  →  06_analytics_cdf.py (watermark)  →  gold_usage_events + marts  →  read back via warehouse  →  dashboard
+Delta lb_*_history  →  06_analytics_cdf.py (watermark job)  →  gold_usage_*  →  read back  →  "Platform activity"
 ```
+
+Two Asset-Bundle jobs (`databricks.yml`): **`pipeline_daily_refresh`** (scheduled,
+notebooks 01→12) and **`analytics_cdf_on_change`** (fires on `lb_*_history`
+changes). Nothing else is automated — the `NN_` prefixes are a human run order.
 
 ## Required components → where they live
 
 | Requirement | Implementation |
 |---|---|
-| Spark data pipeline | `notebooks/01_bronze_ingest_sec.py` … `04_gold_marts.py` |
-| Third-party API | SEC EDGAR APIs (`lib/sec_client.py`) + yfinance (`02_bronze_ingest_market.py`) |
+| Spark data pipeline | `notebooks/01`–`04` (bronze → silver → gold), distributed at ~470-company scale |
+| Third-party API | SEC EDGAR APIs (`lib/sec_client.py`) + yfinance (`02_bronze_ingest_market.py`), yfinance feeds `gold_valuation` |
 | Lakebase data model | `sql/10_operational_tables.sql` — 8 tables, `REPLICA IDENTITY FULL` |
-| Action-taking AI agent | `agent/` — 7 retrieval + 5 write tools, LangGraph loop, in-process in `app.py` |
+| Action-taking AI agent | `agent/` — 21 tools (retrieval + 5 writes), LangGraph loop, in-process in `app.py` |
 | Analytics pipeline (CDF) | `notebooks/06_analytics_cdf.py` + `databricks.yml` `trigger.table_update` job |
-| Frontend | `app.py` + `templates/` — Company Search / Filing Explorer / Financial Dashboard / AI Research Assistant |
-| Deployed app | Databricks App via `app.yaml` |
-| 2 of 3 Vs | Variety (JSON/HTML/XBRL/text) + Volume (`silver_financial_facts` > 1M at ≥100 CIKs) |
+| Frontend | `app.py` + `templates/` — Companies / Dashboard / Research Assistant / My Workspace |
+| Deployed app | Databricks App via `app.yaml` + `databricks.yml` |
+| 2 of 3 Vs | Variety (JSON / HTML / SGML / XBRL / text) + Volume (`silver_financial_facts` — millions of rows) |
 
-## Layout
+## Repository layout
 
 ```
-config/ciks.json           pilot CIK list (scale here for the graded run)
-lib/lakebase.py            Lakebase (Postgres) writer — run_query / run_write
-lib/warehouse.py           Gold/Silver Delta reader — SQL warehouse b15d3d6f837ba428
-lib/sec_client.py          rate-limited SEC EDGAR client
-lib/edgar_parse.py         HTML → sections, XBRL companyfacts → rows, chunking
-sql/                       schema + operational tables + seed
-notebooks/                 01 bronze → 02 market → 03 silver → 04 gold → (05 vector search) → 06 analytics CDF
-agent/                     prompt.py / tools.py / graph.py
-app.py, templates/, static/  Flask 4-screen frontend
-app.yaml, databricks.yml   deploy config
+config/ciks.json          6-company pilot (fast dev)
+config/ciks_full.json     ~470 S&P 500 (generated by build_universe.py) — the graded universe
+lib/                      sec_client · edgar_parse · lakebase (Postgres) · warehouse (Delta reads)
+sql/                      edgar schema + 8 operational tables + seed
+notebooks/                01 bronze SEC · 02 market · 03 silver · 04 gold · 05 vector search ·
+                          06 analytics CDF · 07 UC tags · 08 filing intelligence + 8-K + profile ·
+                          09 ratios · 10 health score · 11 valuation · 12 filing-language diff ·
+                          13 ownership forms · 14 governance   (13-14 = analyst-spec phase 3)
+agent/                    prompt.py · tools.py · graph.py
+app.py templates/ static/ Flask 4-screen frontend + in-process agent
+app.yaml databricks.yml   Databricks App + Asset Bundle (2 jobs)
+docs/                     see below
 ```
 
-## Setup (summary — full runbook in `docs/SETUP.md`)
+## Docs
 
-1. Run `sql/00`–`20` in the Lakebase **SQL Editor** (tables `edgar.*`).
-2. Run notebooks `01`→`04` (widgets default to `bootcamp_students` / `zdsteele_capstone`).
-   `05` is optional (keyword search by default).
-3. Set up **reverse** CDC only: the 6 `edgar.*` tables →
-   `bootcamp_students.zdsteele_capstone.lb_*_history`. Forward reads go through the
-   warehouse — nothing to create.
-4. `cp .env.example .env` (paste the Lakebase Connect string + OAuth token),
-   `pip install -r requirements.txt`, `python app.py`.
-5. `databricks bundle deploy && databricks bundle run edgar_intelligence`.
-
-See `CONTEXT.md` (local) for the full working notes and task log.
+| File | For |
+|---|---|
+| [AGENT.md](AGENT.md) | working in this repo — layout, run-locally, conventions & gotchas |
+| [docs/SETUP.md](docs/SETUP.md) | first-time setup, from zero |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Lakebase ↔ Lakehouse loop, the jobs, what runs when |
+| [docs/PIPELINE.md](docs/PIPELINE.md) | notebook-by-notebook; the bronze tables; CIK / forms / XBRL explained |
+| [docs/ANALYST_SPEC.md](docs/ANALYST_SPEC.md) | the 23-section analyst spec + per-section coverage |
+| [docs/RAG_REVIEW.md](docs/RAG_REVIEW.md) | chunking / embedding / retrieval choices |
+| [docs/SCALING.md](docs/SCALING.md) | running the full ~470-company universe |

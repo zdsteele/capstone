@@ -32,9 +32,11 @@ sql/10_operational_tables.sql   8 tables, each REPLICA IDENTITY FULL
 sql/20_seed.sql            demo user + pilot companies + a watchlist
 notebooks/                 01 bronze SEC · 02 market · 03 silver · 04 gold ·
                            05 vector search · 06 analytics CDF · 07 UC tags ·
-                           08 filing intelligence · 09 ratios · 10 company health
+                           08 filing intelligence + 8-K + business profile · 09 ratios ·
+                           10 company health · 11 valuation · 12 filing-language diff ·
+                           13 ownership forms · 14 governance
 agent/prompt.py            analyst system prompt
-agent/tools.py             12 tools (retrieval + write), each logged to agent_actions
+agent/tools.py             21 tools (retrieval + 5 writes), each logged to agent_actions
 agent/graph.py             LangGraph ReAct loop (ChatDatabricks), run_agent()
 app.py                     Flask: 4 screens + JSON API
 templates/ static/         Jinja + vanilla-JS frontend
