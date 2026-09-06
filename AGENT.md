@@ -38,6 +38,7 @@ app.py                     Flask: 4 screens + JSON API
 templates/ static/         Jinja + vanilla-JS frontend
 app.yaml  databricks.yml   Databricks App + Asset Bundle (analytics job) config
 docs/ARCHITECTURE.md       Lakebase <-> Lakehouse data-flow + job triggers
+docs/PIPELINE.md           plain-language: every notebook, the 5 bronze tables, CIK/forms/XBRL
 docs/ANALYST_SPEC.md       the target analyst spec + what's built vs. scoped-future
 docs/SETUP.md              first-time infra runbook
 ```
