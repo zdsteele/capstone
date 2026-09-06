@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}My Workspace · EDGAR Intelligence{% endblock %}
+{% block nav_ws %}active{% endblock %}
+{% block content %}
+<section class="pane">
+  <h1>My Workspace</h1>
+  <p class="sub">Everything the Research Assistant has saved for you — watchlist companies, bookmarked filings, and research notes. Ask the assistant to "add X to my watchlist" or "save this filing" and it shows up here.</p>
+
+  <div class="wsgrid">
+    <div>
+      <h3>Watchlist</h3>
+      <div id="ws-watchlist"></div>
+    </div>
+    <div>
+      <h3>Saved filings</h3>
+      <div id="ws-filings"></div>
+    </div>
+  </div>
+
+  <h3>Research notes</h3>
+  <div id="ws-notes"></div>
+</section>
+{% endblock %}
+
+{% block script %}
+<script>
+function esc(s) { return escapeHtml(s); }
+
+(async () => {
+  try {
+    const [wl, sv] = await Promise.all([getJSON('/api/watchlist'), getJSON('/api/saved')]);
+
+    const w = wl.watchlist || [];
+    document.getElementById('ws-watchlist').innerHTML = w.length ? w.map(r => `
+      <div class="wscard">
+        <h4>${esc(r.ticker || r.cik)} <span class="muted">· ${esc(r.watchlist || 'My Watchlist')}</span></h4>
+        <p class="muted">CIK ${esc(r.cik)} · added ${(r.added_at || '').slice(0,10)}
+          &nbsp;·&nbsp; <a href="/dashboard?cik=${esc(r.cik)}">dashboard →</a></p>
+      </div>`).join('') : '<p class="empty">No companies on your watchlist yet.</p>';
+
+    const f = sv.filings || [];
+    document.getElementById('ws-filings').innerHTML = f.length ? f.map(r => `
+      <div class="wscard">
+        <h4>${esc(r.form || '')} <span class="muted">· ${esc(r.company_cik || '')}</span></h4>
+        <p class="muted">${esc(r.filing_id)} · filed ${(r.filed_at || '').slice(0,10)}
+          &nbsp;·&nbsp; <a href="/filing/${esc(r.filing_id)}">open →</a></p>
+        ${r.note ? `<p>${esc(r.note)}</p>` : ''}
+      </div>`).join('') : '<p class="empty">No saved filings yet.</p>';
+
+    const n = sv.research || [];
+    document.getElementById('ws-notes').innerHTML = n.length ? n.map(r => `
+      <div class="wscard">
+        <h4>${esc(r.title || '(untitled)')}</h4>
+        <p>${esc(r.notes || '')}</p>
+        <p class="muted">${r.company_cik ? 'CIK ' + esc(r.company_cik) + ' · ' : ''}${r.filing_id ? esc(r.filing_id) + ' · ' : ''}updated ${(r.updated_at || '').slice(0,10)}</p>
+      </div>`).join('') : '<p class="empty">No research notes yet.</p>';
+  } catch (err) {
+    document.getElementById('ws-watchlist').innerHTML = `<p class="error">Failed to load: ${err.message}</p>`;
+  }
+})();
+</script>
+{% endblock %}

@@ -3,21 +3,22 @@
 {% block nav_dash %}active{% endblock %}
 {% block content %}
 <section class="pane">
-  <h1>Financial Dashboard</h1>
-  <p class="sub">GAAP figures from XBRL company facts. Ratios and the health score are computed; the report is AI-generated and grounded on those numbers.</p>
+  <h1>Company Dashboard</h1>
+  <p class="sub">Leads with the AI <strong>Investor Health verdict</strong> — is this company healthy, improving or deteriorating, and what to watch next quarter — then the GAAP financials and computed ratios it's grounded on.</p>
 
   <div class="inputrow">
     <input id="d-company" class="search" placeholder="Ticker or CIK — e.g. AAPL, GOOGL, 0000320193" />
     <button id="d-load">Load</button>
   </div>
+  <p class="muted" id="d-hint" style="font-size:12px">Pick a company on the <a href="/search">Companies</a> page, or type one above.</p>
 
   <div class="tabs">
-    <button class="tab active" data-tab="financials">Financials</button>
-    <button class="tab" data-tab="health">Company health</button>
+    <button class="tab active" data-tab="health">Company health</button>
+    <button class="tab" data-tab="financials">Financials</button>
     <button class="tab" data-tab="activity">Platform activity</button>
   </div>
 
-  <div id="tab-financials">
+  <div id="tab-financials" hidden>
     <div class="cols">
       <div>
         <h3>Revenue history</h3>
@@ -32,7 +33,7 @@
     <div class="tbl"><table id="d-financials" class="grid"></table></div>
   </div>
 
-  <div id="tab-health" hidden>
+  <div id="tab-health">
     <div id="h-score"></div>
     <div id="h-scores" class="scoregrid"></div>
     <div class="tbl" id="h-trends-wrap"><table id="h-trends" class="grid"></table></div>
@@ -74,11 +75,19 @@ async function load() {
     cik = s.companies[0].cik;
   }
   currentCik = cik;
-  await loadFinancials(cik);
-  if (!document.getElementById('tab-health').hidden) loadHealth(cik);
+  document.getElementById('d-hint').hidden = true;
+  // load both so tab switches are instant; health leads
+  loadHealth(cik);
+  loadFinancials(cik);
 }
 document.getElementById('d-load').addEventListener('click', load);
 document.getElementById('d-company').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
+
+// deep link from the Companies grid / Workspace: /dashboard?cik=0000320193
+(() => {
+  const cik = new URLSearchParams(location.search).get('cik');
+  if (cik) { document.getElementById('d-company').value = cik; load(); }
+})();
 
 async function loadFinancials(cik) {
   const d = await getJSON(`/api/dashboard/${cik}`);

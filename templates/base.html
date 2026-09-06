@@ -13,9 +13,10 @@
   <header class="topbar">
     <a class="brand" href="{{ url_for('search_page') }}">EDGAR&nbsp;Intelligence</a>
     <nav>
-      <a href="{{ url_for('search_page') }}" class="{% block nav_search %}{% endblock %}">Search</a>
+      <a href="{{ url_for('search_page') }}" class="{% block nav_search %}{% endblock %}">Companies</a>
       <a href="{{ url_for('dashboard_page') }}" class="{% block nav_dash %}{% endblock %}">Dashboard</a>
       <a href="{{ url_for('assistant_page') }}" class="{% block nav_ai %}{% endblock %}">Research Assistant</a>
+      <a href="{{ url_for('workspace_page') }}" class="{% block nav_ws %}{% endblock %}">My Workspace</a>
     </nav>
     <span class="spacer"></span>
     {% if username %}

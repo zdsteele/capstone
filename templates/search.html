@@ -1,12 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Company Search · EDGAR Intelligence{% endblock %}
+{% block title %}Companies · EDGAR Intelligence{% endblock %}
 {% block nav_search %}active{% endblock %}
 {% block content %}
 <section class="pane">
-  <h1>Company Search</h1>
-  <input id="q" class="search" placeholder="Search by name, ticker, or CIK (e.g. Alphabet, MSFT, 0000320193)" autofocus />
-  <div id="results" class="results"></div>
+  <h1>Companies</h1>
+  <p class="sub">Every company the platform has ingested from SEC EDGAR, ranked by its AI <strong>Investor Health Score</strong>. Click one to open its dashboard, filings, and the analyst report.</p>
+  <input id="q" class="search" placeholder="Filter by name, ticker, or CIK…" autofocus />
 </section>
+
+<div id="grid" class="cardgrid"></div>
 
 <section id="company" class="pane" hidden>
   <h2 id="co-name"></h2>
@@ -22,32 +24,81 @@
       <div class="tbl"><table id="co-filings" class="grid left"></table></div>
     </div>
   </div>
+  <p><a id="co-dash" class="btn" href="#">Open full dashboard →</a></p>
 </section>
 {% endblock %}
+
 {% block script %}
 <script>
+const grid = document.getElementById('grid');
 const q = document.getElementById('q');
-const results = document.getElementById('results');
-q.addEventListener('input', debounce(async () => {
-  const term = q.value.trim();
-  if (!term) { results.innerHTML = ''; return; }
-  const data = await getJSON(`/api/search?q=${encodeURIComponent(term)}`);
-  results.innerHTML = (data.companies || []).map(c => `
-    <button class="row" data-cik="${c.cik}">
-      <strong>${c.ticker || ''}</strong> ${c.name}
-      <span class="muted">CIK ${c.cik} · ${c.filing_count} filings</span>
-    </button>`).join('') || '<p class="muted">No matches.</p>';
-  results.querySelectorAll('.row').forEach(b =>
+let ALL = [];
+
+function scoreClass(label) {
+  const l = (label || '').toLowerCase();
+  if (l === 'strong' || l === 'healthy') return 'pos';
+  if (l === 'mixed') return 'warn';
+  if (l === 'weak' || l === 'distressed') return 'neg';
+  return 'muted';
+}
+
+function card(c) {
+  const s = c.overall_score;
+  const cls = scoreClass(c.overall_label);
+  const dir = (c.direction || '').toLowerCase();
+  return `<button class="ccard" data-cik="${c.cik}">
+    <div class="ccard-top">
+      <div><strong>${c.ticker || ''}</strong><span class="muted"> ${c.name || ''}</span></div>
+      ${s != null ? `<span class="scorepill ${cls}">${s}<small>/100</small></span>` : '<span class="muted" style="font-size:11px">no score yet</span>'}
+    </div>
+    <div class="ccard-mid">
+      ${c.overall_label ? `<span class="tone ${cls === 'pos' ? 'improving' : cls === 'neg' ? 'deteriorating' : 'stable'}">${c.overall_label}</span>` : ''}
+      ${dir ? `<span class="tone ${dir}">${c.direction}</span>` : ''}
+      <span class="muted">${c.sic_description || ''}</span>
+    </div>
+    ${c.primary_strength ? `<p class="ccard-line"><b>Strength:</b> ${c.primary_strength}</p>` : ''}
+    ${c.primary_risk ? `<p class="ccard-line"><b>Risk:</b> ${c.primary_risk}</p>` : ''}
+    <p class="muted" style="font-size:11px;margin-top:6px">${c.filing_count || 0} filings · CIK ${c.cik}</p>
+  </button>`;
+}
+
+function render(list) {
+  grid.innerHTML = list.length
+    ? list.map(card).join('')
+    : '<p class="muted" style="padding:0 4px">No companies match.</p>';
+  grid.querySelectorAll('.ccard').forEach(b =>
     b.addEventListener('click', () => loadCompany(b.dataset.cik)));
-}, 250));
+}
+
+(async () => {
+  try {
+    const d = await getJSON('/api/companies');
+    ALL = d.companies || [];
+    render(ALL);
+  } catch (err) {
+    grid.innerHTML = `<p class="error">Failed to load companies: ${err.message}</p>`;
+  }
+})();
+
+q.addEventListener('input', debounce(() => {
+  const t = q.value.trim().toLowerCase();
+  render(!t ? ALL : ALL.filter(c =>
+    (c.ticker || '').toLowerCase().includes(t) ||
+    (c.name || '').toLowerCase().includes(t) ||
+    (c.cik || '').includes(t)));
+}, 150));
 
 async function loadCompany(cik) {
   const d = await getJSON(`/api/company/${cik}`);
   if (!d.company) return;
-  document.getElementById('company').hidden = false;
+  const co = document.getElementById('company');
+  co.hidden = false;
+  co.scrollIntoView({ behavior: 'smooth', block: 'start' });
   document.getElementById('co-name').textContent = `${d.company.ticker || ''} ${d.company.name}`;
   document.getElementById('co-meta').textContent =
     `CIK ${d.company.cik} · SIC ${d.company.sic || '—'} ${d.company.sic_description || ''}`;
+  document.getElementById('co-dash').href = `/dashboard?cik=${cik}`;
+
   document.getElementById('co-metrics').innerHTML =
     '<thead><tr><th>Period</th><th>Revenue</th><th>Net income</th><th>EPS dil.</th></tr></thead><tbody>' +
     d.metrics.map(m => `<tr><td>${m.fiscal_year} ${m.fiscal_period}</td>

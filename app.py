@@ -51,6 +51,9 @@ def _setup_logging():
         )
         fh.setFormatter(fmt)
         root.addHandler(fh)
+    # keep chatty third-party libraries out of the app log even in debug mode
+    for noisy in ("databricks.sql", "urllib3", "py4j", "mlflow", "httpx"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     return log_path
 
 
@@ -210,6 +213,13 @@ def assistant_page():
     return render_template("assistant.html", **_nav())
 
 
+@app.route("/workspace")
+def workspace_page():
+    if not _current_user():
+        return redirect(url_for("login"))
+    return render_template("workspace.html", **_nav())
+
+
 def _nav():
     u = _current_user() or {}
     return {"username": u.get("username"), "catalog": warehouse.CATALOG, "schema": warehouse.SCHEMA}
@@ -218,6 +228,24 @@ def _nav():
 # ---------------------------------------------------------------------------
 # JSON API — reads (Gold/Silver Delta via warehouse)
 # ---------------------------------------------------------------------------
+
+@app.route("/api/companies")
+def api_companies():
+    """Every covered company + its AI health verdict — powers the landing grid."""
+    _require_user()
+    rows = warehouse.query(
+        f"""
+        SELECT c.cik, c.ticker, c.name, c.sic_description,
+               (SELECT count(*) FROM {T('silver_filings')} f WHERE f.cik = c.cik) AS filing_count,
+               h.overall_score, h.overall_label, h.direction,
+               h.primary_strength, h.primary_risk, h.key_metric_next_quarter
+        FROM {T('silver_companies')} c
+        LEFT JOIN {T('gold_company_health')} h ON h.cik = c.cik
+        ORDER BY h.overall_score DESC NULLS LAST, c.ticker
+        """
+    )
+    return jsonify({"companies": rows})
+
 
 @app.route("/api/search")
 def api_search():
