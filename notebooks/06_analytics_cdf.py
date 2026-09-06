@@ -46,7 +46,9 @@ spark.sql(
 # COMMAND ----------
 
 # DBTITLE 1,Per-source: read new CDF rows -> gold_usage_events
-# source table -> (event_type, entity column expr, detail columns)
+# source table -> (event_type, entity expr, detail cols, ts col, user_id expr).
+# user_id_expr defaults to the `user_id` column; watchlist_companies has none
+# (it links to a user only through watchlists), so NULL there.
 SOURCES = {
     "lb_agent_actions_history": dict(
         event_type_expr="concat('tool:', tool_name)",
@@ -71,6 +73,7 @@ SOURCES = {
         entity_expr="cik",
         detail_cols=["ticker", "watchlist_id"],
         ts_col="added_at",
+        user_id_expr="cast(null as long)",
     ),
     "lb_watchlists_history": dict(
         event_type_expr="'watchlist_create'",
@@ -97,6 +100,7 @@ for src, cfg in SOURCES.items():
     ).collect()[0]["s"]
 
     detail_struct = ", ".join(f"'{c}', cast({c} as string)" for c in cfg["detail_cols"])
+    user_id_expr = cfg.get("user_id_expr", "try_cast(user_id as long)")
     new_rows = spark.sql(
         f"""
         SELECT
@@ -104,7 +108,7 @@ for src, cfg in SOURCES.items():
             _pg_change_type AS pg_change_type,
             _sort_by AS sort_by,
             cast({cfg['ts_col']} as timestamp) AS event_ts,
-            try_cast(user_id as long) AS user_id,
+            {user_id_expr} AS user_id,
             {cfg['event_type_expr']} AS event_type,
             {cfg['entity_expr']} AS entity,
             to_json(named_struct({detail_struct})) AS detail,
