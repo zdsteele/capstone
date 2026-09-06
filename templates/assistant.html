@@ -4,7 +4,24 @@
 {% block content %}
 <section class="pane chat">
   <h1>AI Research Assistant</h1>
-  <p class="sub">A tool-calling analyst agent. It looks up filings, financials, ratios and the health score, searches filing text, and can save filings, update your watchlist, or write research notes. Every answer ends with a confidence rating.</p>
+  <p class="sub">A tool-calling analyst agent. It looks up filings, financials, ratios and the health score, searches filing text, and can save filings, update your watchlist, or write research notes. Every answer ends with a confidence rating. Click a prompt to try it, or type your own.</p>
+
+  <div class="suggest" id="suggest">
+    <div class="lbl">Analyze (read-only)</div>
+    <div class="chips">
+      <button type="button" class="chip">Is Alphabet financially healthy, and what should I watch next quarter?</button>
+      <button type="button" class="chip">Summarize the revenue drivers in Microsoft's latest 10-K</button>
+      <button type="button" class="chip">Compare Apple and Microsoft on operating margin and FCF</button>
+      <button type="button" class="chip">What are Tesla's main risk themes from its most recent filing?</button>
+    </div>
+    <div class="lbl">Take action (writes to your workspace → shows up in Platform activity)</div>
+    <div class="chips">
+      <button type="button" class="chip">Save Microsoft's latest 10-K to my research list</button>
+      <button type="button" class="chip">Add Apple and Amazon to my watchlist</button>
+      <button type="button" class="chip">Create a research note "Cloud comparison" about Azure vs Google Cloud</button>
+    </div>
+  </div>
+
   <div id="log" class="chatlog"></div>
   <form id="chatform" class="chatbar">
     <input id="msg" placeholder="e.g. Is Alphabet financially healthy, and what should I watch next quarter?" autofocus />
@@ -48,10 +65,17 @@ function bubble(role, text, tools, confidence, confidenceReason) {
   log.scrollTop = log.scrollHeight;
 }
 
+const suggest = document.getElementById('suggest');
+suggest.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
+  msg.value = b.textContent.trim();
+  form.requestSubmit();
+}));
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = msg.value.trim();
   if (!text) return;
+  suggest.hidden = true;
   bubble('user', text);
   msg.value = '';
   document.getElementById('send').disabled = true;

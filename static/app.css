@@ -292,6 +292,16 @@ table.grid.left td, table.grid.left th { text-align: left !important; white-spac
   font-size: 11px; padding: 4px 10px; border-radius: 999px;
   background: var(--panel); border: 1px solid var(--line); color: var(--ink-2);
 }
+button.chip { font-weight: 500; cursor: pointer; }
+button.chip:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+
+/* research-assistant example prompts */
+.suggest { margin: 2px 0 16px; }
+.suggest .lbl {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin: 12px 0 6px;
+}
+.suggest .lbl:first-child { margin-top: 0; }
 
 /* ---------- company health ---------- */
 .healthhead {
