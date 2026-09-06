@@ -1,7 +1,4 @@
-# Databricks App runtime + in-process agent — kept lean so pip can resolve it.
-# (databricks-langchain was dropped: it pulls openai-agents / mcp / databricks-openai
-#  and blows up pip's resolver. We call the LLM via the serving endpoint's
-#  OpenAI-compatible API with langchain-openai instead.)
+# Databricks App runtime + in-process agent.
 
 flask>=3.0.3
 psycopg2-binary>=2.9.9
@@ -10,12 +7,15 @@ databricks-sql-connector>=3.4.0
 requests>=2.32.3
 python-dotenv>=1.0.1
 
-# In-process LangGraph agent. databricks-langchain is PINNED — newer releases
-# pull openai-agents / mcp / databricks-openai and blow up pip's resolver.
-databricks-langchain==0.16.1
-langchain-core>=0.3.0,<0.4
-langgraph>=0.2.40,<0.4
-mlflow-skinny>=2.15
+# In-process LangGraph agent. databricks-langchain is PINNED to the 0.4 line:
+# >=0.5 pulls databricks-connect, and 0.16.x requires langchain>=1.0 + databricks-mcp
+# + databricks-openai, which explodes pip's resolver. 0.4.0 needs only the
+# langchain 0.3 line, so everything below is pinned to match.
+databricks-langchain==0.4.0
+langchain>=0.3.20,<0.4
+langchain-core>=0.3.33,<0.4
+langgraph>=0.3,<0.4
+mlflow>=2.20.1,<4          # pulled in by databricks-langchain; full mlflow, not -skinny
 
 # Filing parsing (also used by the Spark notebooks)
 beautifulsoup4>=4.12.0

@@ -245,7 +245,18 @@ def api_filing(accession):
     facts = warehouse.query(
         f"""
         SELECT concept, label, unit, period_start, period_end, value, fiscal_period
-        FROM {T('silver_financial_facts')} WHERE accession = ? ORDER BY concept LIMIT 200
+        FROM {T('silver_financial_facts')} WHERE accession = ?
+          AND concept IN (
+            'Revenues','RevenueFromContractWithCustomerExcludingAssessedTax',
+            'CostOfRevenue','CostOfGoodsAndServicesSold','GrossProfit',
+            'ResearchAndDevelopmentExpense','SellingGeneralAndAdministrativeExpense',
+            'OperatingIncomeLoss','NetIncomeLoss','EarningsPerShareBasic',
+            'EarningsPerShareDiluted','Assets','Liabilities','StockholdersEquity',
+            'CashAndCashEquivalentsAtCarryingValue','LongTermDebtNoncurrent',
+            'NetCashProvidedByUsedInOperatingActivities',
+            'PaymentsToAcquirePropertyPlantAndEquipment')
+        ORDER BY period_end DESC, concept
+        LIMIT 40
         """,
         [accession],
     )
