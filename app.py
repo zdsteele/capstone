@@ -230,21 +230,34 @@ def _nav():
 # JSON API — reads (Gold/Silver Delta via warehouse)
 # ---------------------------------------------------------------------------
 
+_companies_cache: dict = {"at": 0.0, "rows": None}
+
+
 @app.route("/api/companies")
 def api_companies():
-    """Every covered company + its AI health verdict — powers the landing grid."""
+    """Every covered company + its AI health verdict — powers the landing grid.
+    Cached in-process for 5 min: the data only changes when the pipeline re-runs,
+    and at ~475 companies the warehouse round-trip is the slow part."""
     _require_user()
+    if _companies_cache["rows"] is not None and time.time() - _companies_cache["at"] < 300:
+        return jsonify({"companies": _companies_cache["rows"], "cached": True})
     rows = warehouse.query(
         f"""
+        WITH fc AS (
+          SELECT cik, count(*) AS filing_count
+          FROM {T('silver_filings')} GROUP BY cik
+        )
         SELECT c.cik, c.ticker, c.name, c.sic_description,
-               (SELECT count(*) FROM {T('silver_filings')} f WHERE f.cik = c.cik) AS filing_count,
+               coalesce(fc.filing_count, 0) AS filing_count,
                h.overall_score, h.overall_label, h.direction,
                h.primary_strength, h.primary_risk, h.key_metric_next_quarter
         FROM {T('silver_companies')} c
+        LEFT JOIN fc ON fc.cik = c.cik
         LEFT JOIN {T('gold_company_health')} h ON h.cik = c.cik
         ORDER BY h.overall_score DESC NULLS LAST, c.ticker
         """
     )
+    _companies_cache.update(at=time.time(), rows=rows)
     return jsonify({"companies": rows})
 
 
@@ -374,7 +387,22 @@ def api_health(cik):
         )
     except Exception as exc:
         return jsonify({"health": None, "ratios": [], "note": f"run notebooks 09 + 10: {exc}"})
-    return jsonify({"health": h[0] if h else None, "ratios": ratios})
+    try:
+        val = warehouse.query(
+            f"""
+            SELECT price, price_date, market_cap, enterprise_value, pe, ev_ebit,
+                   ev_revenue, price_to_fcf, fcf_yield, price_to_book, as_of
+            FROM {T('gold_valuation')} WHERE cik = ?
+            """,
+            [cik],
+        )
+    except Exception:
+        val = []
+    return jsonify({
+        "health": h[0] if h else None,
+        "ratios": ratios,
+        "valuation": val[0] if val else None,
+    })
 
 
 @app.route("/api/intelligence")

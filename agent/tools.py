@@ -280,6 +280,29 @@ def build_tools(ctx: ToolContext) -> list:
             return _rows_or_msg(rows, f"No ratios for {company} (run notebook 09).")
 
     @tool
+    def get_valuation(company: str) -> str:
+        """Get market-based valuation multiples for a company: price, market cap,
+        enterprise value, P/E, EV/EBIT, EV/Revenue, Price/FCF, FCF yield,
+        Price/Book. Market data is from yfinance; fundamentals from XBRL.
+        This is STOCK VALUATION — keep it separate from company quality
+        (get_company_health). A low multiple is not automatically 'cheap'."""
+        with record_action(ctx, "get_valuation", "retrieval", {"company": company}) as rec:
+            cik = _resolve_cik(company)
+            if not cik:
+                return f"Could not resolve company '{company}'."
+            rows = _wq(
+                f"""
+                SELECT ticker, name, price, price_date, market_cap, enterprise_value,
+                       net_debt, revenue_ttm, net_income_ttm, ebit_ttm, fcf_ttm,
+                       pe, ev_ebit, ev_revenue, price_to_fcf, fcf_yield, price_to_book, as_of
+                FROM {T('gold_valuation')} WHERE cik = ?
+                """,
+                [cik],
+            )
+            rec["result"] = rows
+            return _rows_or_msg(rows, f"No valuation for {company} (run notebook 11).")
+
+    @tool
     def get_company_health(company: str) -> str:
         """Get the AI investor health assessment for a company: 0-100 scores per
         dimension + overall, direction, and the full structured report (what
@@ -562,7 +585,7 @@ def build_tools(ctx: ToolContext) -> list:
 
     return [
         search_company, search_filings, get_filing, get_filing_intelligence,
-        get_financial_ratios, get_company_health,
+        get_financial_ratios, get_valuation, get_company_health,
         get_financial_metric, compare_companies,
         search_filing_text, read_filing_section, get_saved_research,
         save_filing, save_company_to_watchlist, create_research_note,

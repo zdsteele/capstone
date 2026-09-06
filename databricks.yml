@@ -150,6 +150,16 @@ resources:
               schema: "${var.schema}"
           timeout_seconds: 86400
 
+        - task_key: valuation
+          depends_on:
+            - task_key: financial_ratios
+          notebook_task:
+            notebook_path: ./notebooks/11_valuation.py
+            base_parameters:
+              catalog: "${var.catalog}"
+              schema: "${var.schema}"
+          timeout_seconds: 86400
+
         - task_key: company_health
           depends_on:
             - task_key: filing_intelligence

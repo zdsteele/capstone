@@ -36,6 +36,7 @@
   <div id="tab-health">
     <div id="h-score"></div>
     <div id="h-scores" class="scoregrid"></div>
+    <div id="h-valuation"></div>
     <div class="tbl" id="h-trends-wrap"><table id="h-trends" class="grid"></table></div>
     <div id="h-report"></div>
     <p class="muted" id="h-note"></p>
@@ -165,6 +166,22 @@ async function loadHealth(cik) {
     'Cash generation': s.cash_generation, 'Balance sheet': s.balance_sheet,
     'Capital allocation': s.capital_allocation, 'Capital efficiency': s.capital_efficiency,
   }).map(([k, v]) => `<div class="scell"><span class="sv">${v ?? '—'}</span><span class="sl">${k}</span></div>`).join('');
+
+  const v = d.valuation;
+  const rx = x => x == null ? '—' : Number(x).toFixed(1) + '×';
+  document.getElementById('h-valuation').innerHTML = v ? `
+    <h3>Valuation <span class="muted" style="text-transform:none;letter-spacing:0">— stock price vs the numbers, kept separate from company quality</span></h3>
+    <div class="scoregrid">
+      <div class="scell"><span class="sv">${fmtUSD(v.market_cap)}</span><span class="sl">Market cap</span></div>
+      <div class="scell"><span class="sv">${fmtUSD(v.enterprise_value)}</span><span class="sl">Enterprise value</span></div>
+      <div class="scell"><span class="sv">${rx(v.pe)}</span><span class="sl">P / E</span></div>
+      <div class="scell"><span class="sv">${rx(v.ev_ebit)}</span><span class="sl">EV / EBIT</span></div>
+      <div class="scell"><span class="sv">${rx(v.ev_revenue)}</span><span class="sl">EV / Revenue</span></div>
+      <div class="scell"><span class="sv">${rx(v.price_to_fcf)}</span><span class="sl">Price / FCF</span></div>
+      <div class="scell"><span class="sv">${v.fcf_yield == null ? '—' : (v.fcf_yield * 100).toFixed(1) + '%'}</span><span class="sl">FCF yield</span></div>
+      <div class="scell"><span class="sv">${rx(v.price_to_book)}</span><span class="sl">Price / Book</span></div>
+    </div>
+    <p class="muted" style="font-size:11px">Price ${fmtUSD(v.price)} on ${(v.price_date||'').slice(0,10)} (yfinance) · fundamentals through ${(v.as_of||'').slice(0,10)}. A low multiple is not automatically "cheap".</p>` : '';
 
   const rr = d.ratios || [];
   document.getElementById('h-trends').innerHTML =

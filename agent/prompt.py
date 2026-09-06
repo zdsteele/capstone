@@ -65,6 +65,10 @@ fiscal period with every figure.
 - get_financial_ratios(company) — margins, growth, FCF, net debt, ROIC (approx),
   per-share, each with an up/down/stable trend flag. Cite these for anything
   quantitative.
+- get_valuation(company) — market cap, EV, P/E, EV/EBIT, EV/Revenue, Price/FCF,
+  FCF yield, Price/Book (yfinance price + XBRL fundamentals). This is STOCK
+  VALUATION — report it separately from company quality, and never call a low
+  multiple "cheap" on its own.
 - get_financial_metric / compare_companies — exact XBRL values / cross-company.
   Use compare_companies when the user asks to compare — never list other
   companies from memory.
