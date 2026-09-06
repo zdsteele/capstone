@@ -43,11 +43,19 @@ with open(dbutils.widgets.get("ciks_config")) as fh:
 INGESTED_AT = dt.datetime.utcnow().isoformat()
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
 
-FIRST_RUN = not spark.catalog.tableExists(TABLE)
-PERIOD = dbutils.widgets.get("full_period") if (FIRST_RUN or MODE == "full") \
-    else dbutils.widgets.get("incr_period")
-print(f"tickers: {[c['ticker'] for c in COMPANIES]}  mode={MODE} "
-      f"first_run={FIRST_RUN}  period={PERIOD}")
+FULL_PERIOD = dbutils.widgets.get("full_period")
+INCR_PERIOD = dbutils.widgets.get("incr_period")
+FORCE_FULL = MODE == "full"
+
+# per-ticker, not per-table: a ticker with no history yet gets the full pull even
+# when the table already exists (the scale bug — 470 new S&P 500 tickers were
+# getting only a 5-day window because bronze_market_bars existed from the pilot).
+if spark.catalog.tableExists(TABLE):
+    _have = {r["ticker"] for r in spark.table(TABLE).select("ticker").distinct().collect()}
+else:
+    _have = set()
+print(f"{len(COMPANIES)} tickers  ({len(_have)} already have history)  "
+      f"mode={MODE}  full={FULL_PERIOD}  incr={INCR_PERIOD}")
 
 # COMMAND ----------
 
@@ -58,9 +66,13 @@ from pyspark.sql.types import (
 )
 
 seed = spark.createDataFrame(
-    [(c["cik"].zfill(10), c["ticker"]) for c in COMPANIES if c.get("ticker")],
-    schema=["cik", "ticker"],
-).repartition(len(COMPANIES))
+    [
+        (c["cik"].zfill(10), c["ticker"],
+         INCR_PERIOD if (c["ticker"] in _have and not FORCE_FULL) else FULL_PERIOD)
+        for c in COMPANIES if c.get("ticker")
+    ],
+    schema=["cik", "ticker", "period"],
+).repartition(max(8, min(256, len(COMPANIES))))
 
 out_schema = StructType(
     [
@@ -76,8 +88,6 @@ out_schema = StructType(
     ]
 )
 
-_period = PERIOD
-
 
 def fetch_bars(iterator):
     import pandas as pd
@@ -87,7 +97,9 @@ def fetch_bars(iterator):
         frames = []
         for _, row in pdf.iterrows():
             try:
-                hist = yf.Ticker(row["ticker"]).history(period=_period, interval="1d")
+                hist = yf.Ticker(row["ticker"]).history(
+                    period=row["period"], interval="1d"
+                )
             except Exception:
                 continue
             if hist is None or hist.empty:
@@ -128,7 +140,7 @@ bars = seed.mapInPandas(fetch_bars, schema=out_schema).withColumn(
 # DBTITLE 1,Write bronze_market_bars (MERGE on cik, bar_date)
 staged = bars.dropDuplicates(["cik", "bar_date"])
 
-if FIRST_RUN:
+if not spark.catalog.tableExists(TABLE):
     staged.write.format("delta").option("mergeSchema", "true") \
         .partitionBy("cik").saveAsTable(TABLE)
     n_new = spark.table(TABLE).count()
@@ -150,6 +162,7 @@ else:
           f"(table now {spark.table(TABLE).count():,} rows)")
 
 dbutils.notebook.exit(
-    json.dumps({"status": "ok", "mode": MODE, "period": PERIOD,
+    json.dumps({"status": "ok", "mode": MODE,
+                "full_pull_tickers": len(COMPANIES) - len(_have),
                 "staged_rows": int(n_new), "ingested_at": INGESTED_AT})
 )

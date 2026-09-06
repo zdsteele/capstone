@@ -155,8 +155,12 @@ facts_raw = (
     .mapInPandas(_flatten_facts, schema=_FACTS_SCHEMA)
 )
 
-known_filings = spark.table(T("silver_filings")).select("cik", "accession").dropDuplicates()
-
+# NOTE: we do NOT gate facts on silver_filings. Every companyfacts observation
+# carries a real SEC accession and the payload is keyed by a CIK we requested,
+# so it's already referentially sound. Requiring a match to silver_filings (only
+# the ~12 recent filings we download docs for) threw away the whole pre-2025
+# history — 683k rows, 90% from 2025-26. Keeping the full history is what clears
+# the Volume V (~8-12M rows at 474 companies).
 silver_financial_facts = (
     facts_raw.withColumn("period_start", F.to_date("period_start"))
     .withColumn("period_end", F.to_date("period_end"))
@@ -182,7 +186,6 @@ silver_financial_facts = (
         F.col("cik").isNotNull() & F.col("period_end").isNotNull()
         & F.col("value").isNotNull() & F.col("accession").isNotNull()
     )
-    .join(known_filings, ["cik", "accession"], "left_semi")
     .dropDuplicates(["cik", "accession", "taxonomy", "concept", "unit", "period_start", "period_end"])
 )
 
