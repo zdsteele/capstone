@@ -11,6 +11,20 @@ variables:
   notify_email:
     description: address for job failure notifications
     default: zacharysteele8@gmail.com
+  owner_user:
+    description: human owner — gets CAN_MANAGE on every bundle resource, even
+      when a service principal runs the deploy
+    default: zacharysteele8@gmail.com
+
+# Applies to every job / app the bundle creates, regardless of deploying
+# identity. Without this, an SP-run deploy leaves the jobs invisible to the
+# human owner.
+permissions:
+  - user_name: ${var.owner_user}
+    level: CAN_MANAGE
+  # the loaner service principal that currently runs the deploys
+  - service_principal_name: 0813858b-972d-4b71-bec3-067778eaed91
+    level: CAN_MANAGE
 
 resources:
   jobs:
