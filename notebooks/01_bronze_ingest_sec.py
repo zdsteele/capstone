@@ -63,6 +63,9 @@ dbutils.widgets.dropdown("mode", "incremental", ["incremental", "full"])
 # so keep this modest for the scaled run (recent filings are all the section /
 # chunk / AI-briefing layers need). 12 ≈ ~3 years of 10-K/10-Q/8-K.
 dbutils.widgets.text("max_new_filings_per_cik", "12")
+# Flush to Delta every N companies so a timeout / failure only loses the current
+# batch — the next run reads seen_accessions from bronze_filings and resumes.
+dbutils.widgets.text("batch_size", "25")
 dbutils.widgets.text(
     "sec_user_agent",
     "EDGAR Intelligence Platform - Zach Steele zacharysteele8@gmail.com",
@@ -72,6 +75,7 @@ CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 MODE = dbutils.widgets.get("mode")
 MAX_NEW = int(dbutils.widgets.get("max_new_filings_per_cik"))
+BATCH_SIZE = int(dbutils.widgets.get("batch_size"))
 USER_AGENT = dbutils.widgets.get("sec_user_agent")
 FULL = MODE == "full"
 
@@ -111,12 +115,57 @@ print(f"{len(seen_accessions):,} filings already in bronze_filings"
 
 # COMMAND ----------
 
-# DBTITLE 1,Fetch (driver-sequential, rate-limited)
+# DBTITLE 1,Fetch (driver-sequential, rate-limited) — flushes to Delta every batch
 client = SecClient(user_agent=USER_AGENT, requests_per_second=8.0)
 
 submission_rows, filing_rows, document_rows, facts_rows, text_rows = [], [], [], [], []
 skipped = 0
+merged = {}
+_i = 0
 _t_start = dt.datetime.utcnow()
+
+
+def _upsert(rows, table, keys, refresh_on_match):
+    """MERGE `rows` into `table` on `keys`. refresh_on_match=True overwrites the
+    stored row (dimensions re-pulled every run); False keeps the first scraping
+    (immutable raw filing data). Creates the table on first run."""
+    fq = f"{CATALOG}.{SCHEMA}.{table}"
+    if not rows:
+        return 0
+    df = spark.createDataFrame(rows)
+    if not spark.catalog.tableExists(fq):
+        df.write.format("delta").option("mergeSchema", "true").saveAsTable(fq)
+        return len(rows)
+    view = f"_stg_{table}"
+    df.createOrReplaceTempView(view)
+    on = " AND ".join(f"t.{k} = s.{k}" for k in keys)
+    matched = "WHEN MATCHED THEN UPDATE SET *\n" if refresh_on_match else ""
+    spark.sql(
+        f"MERGE INTO {fq} t USING {view} s ON {on}\n{matched}WHEN NOT MATCHED THEN INSERT *"
+    )
+    return len(rows)
+
+
+def _flush():
+    """Write everything accumulated so far, then clear the buffers. Called every
+    BATCH_SIZE companies and once at the end — a timeout mid-run only loses the
+    current batch; the next run resumes from bronze_filings."""
+    global submission_rows, filing_rows, document_rows, facts_rows, text_rows
+    plan = [
+        (submission_rows, "bronze_company_submissions", ["cik"], True),
+        (facts_rows, "bronze_xbrl_facts", ["cik"], True),
+        (filing_rows, "bronze_filings", ["cik", "accession"], False),
+        (document_rows, "bronze_filing_documents", ["cik", "accession", "document"], False),
+        (text_rows, "bronze_filing_text", ["cik", "accession", "doc_kind"], False),
+    ]
+    for rows, table, keys, refresh in plan:
+        n = _upsert(rows, table, keys, refresh)
+        merged[table] = merged.get(table, 0) + n
+    n_new = len(filing_rows)
+    submission_rows, filing_rows, document_rows, facts_rows, text_rows = [], [], [], [], []
+    if n_new:
+        print(f"  [flush] +{n_new} filings written to Delta  "
+              f"(cumulative this run: {merged.get('bronze_filings', 0)})")
 
 for _i, co in enumerate(COMPANIES, 1):
     cik_raw, ticker, name = co["cik"], co.get("ticker"), co.get("name")
@@ -266,65 +315,15 @@ for _i, co in enumerate(COMPANIES, 1):
 
     print(f"  {new_here} new filing(s)")
 
+    if _i % BATCH_SIZE == 0:
+        _flush()
+
+# final flush for the last partial batch
+_flush()
 print(
-    f"\nfetched: {len(submission_rows)} submissions, {len(facts_rows)} companyfacts, "
-    f"{len(filing_rows)} filings ({skipped} already-ingested skipped), "
-    f"{len(document_rows)} docs, {len(text_rows)} text blobs"
+    f"\ndone: {_i}/{len(COMPANIES)} companies, {skipped} already-ingested skipped, "
+    f"rows written this run: {merged}"
 )
-
-# COMMAND ----------
-
-# DBTITLE 1,Write Bronze Delta tables (MERGE upserts — never overwrite)
-def _upsert(rows, table, keys, refresh_on_match):
-    """MERGE `rows` into `table` on `keys`. `refresh_on_match=True` overwrites the
-    stored row (dimensions re-pulled every run); `False` keeps the first scraping
-    (immutable raw filing data). Creates the table on first run."""
-    fq = f"{CATALOG}.{SCHEMA}.{table}"
-    if not rows:
-        print(f"  (skip {table} — 0 rows)")
-        return 0
-    df = spark.createDataFrame(rows)
-    if not spark.catalog.tableExists(fq):
-        df.write.format("delta").option("mergeSchema", "true").saveAsTable(fq)
-        print(f"  created {len(rows):>6} -> {table}")
-        return len(rows)
-
-    view = f"_stg_{table}"
-    df.createOrReplaceTempView(view)
-    on = " AND ".join(f"t.{k} = s.{k}" for k in keys)
-    matched = "WHEN MATCHED THEN UPDATE SET *\n" if refresh_on_match else ""
-    # plain MERGE — row schemas are fixed here, so no schema evolution needed
-    # (the session-level autoMerge conf is rejected on serverless anyway).
-    spark.sql(
-        f"""
-        MERGE INTO {fq} t USING {view} s ON {on}
-        {matched}WHEN NOT MATCHED THEN INSERT *
-        """
-    )
-    n = spark.table(fq).count()
-    print(f"  merged {len(rows):>6} -> {table}  (table now {n:,} rows)")
-    return len(rows)
-
-
-merged = {
-    "bronze_company_submissions": _upsert(
-        submission_rows, "bronze_company_submissions", ["cik"], refresh_on_match=True
-    ),
-    "bronze_xbrl_facts": _upsert(
-        facts_rows, "bronze_xbrl_facts", ["cik"], refresh_on_match=True
-    ),
-    "bronze_filings": _upsert(
-        filing_rows, "bronze_filings", ["cik", "accession"], refresh_on_match=False
-    ),
-    "bronze_filing_documents": _upsert(
-        document_rows, "bronze_filing_documents",
-        ["cik", "accession", "document"], refresh_on_match=False
-    ),
-    "bronze_filing_text": _upsert(
-        text_rows, "bronze_filing_text",
-        ["cik", "accession", "doc_kind"], refresh_on_match=False
-    ),
-}
 
 # COMMAND ----------
 
