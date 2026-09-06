@@ -215,15 +215,33 @@ async function loadHealth(cik) {
   }
   document.getElementById('h-govins').innerHTML = gi;
 
+  const p = d.profile;
+  if (p) {
+    const chips = a => (a || []).map(x => `<span class="chip">${escapeHtml(x)}</span>`).join('');
+    document.getElementById('h-govins').innerHTML =
+      `<h3>Business <span class="muted" style="text-transform:none;letter-spacing:0">— from the latest 10-K</span></h3>
+       <p>${escapeHtml(p.primary_business || '')}</p>
+       <table class="kv">
+         <tr><th>Sector</th><td>${escapeHtml(p.sector || '—')} · ${escapeHtml(p.revenue_model || '')} revenue · ${escapeHtml(p.cyclicality || '?')} cyclicality · ${escapeHtml(p.capital_intensity || '?')} capital intensity</td></tr>
+         <tr><th>Segments</th><td>${(p.segments || []).join(', ') || '—'}</td></tr>
+         <tr><th>Geographies</th><td>${(p.geographies || []).join(', ') || '—'}</td></tr>
+         <tr><th>Customers</th><td>${escapeHtml(p.customer_concentration || ((p.key_customers||[]).join(', ') || '—'))}</td></tr>
+         <tr><th>Competitors</th><td>${(p.competitors || []).join(', ') || '—'}</td></tr>
+       </table>` + gi;
+  }
+
   const rr = d.ratios || [];
   document.getElementById('h-trends').innerHTML =
-    '<thead><tr><th>Period</th><th>Rev&nbsp;growth</th><th>Op&nbsp;margin</th><th>FCF&nbsp;margin</th><th>ROIC&nbsp;≈</th><th>Net&nbsp;debt</th></tr></thead><tbody>' +
+    '<thead><tr><th>Period</th><th>Rev&nbsp;growth</th><th>Op&nbsp;margin</th><th>FCF&nbsp;margin</th><th>ROIC</th><th>Net&nbsp;debt/EBITDA</th><th>Current&nbsp;ratio</th><th>CCC</th><th>FCF&nbsp;payout</th></tr></thead><tbody>' +
     rr.map(r => `<tr><td>${r.fiscal_year} ${r.fiscal_period}</td>
       <td>${pct(r.revenue_growth_yoy)}</td>
       <td>${pct(r.operating_margin)} ${tmark(r.operating_margin_trend)}</td>
       <td>${pct(r.fcf_margin)} ${tmark(r.fcf_margin_trend)}</td>
-      <td>${pct(r.roic_approx)} ${tmark(r.roic_approx_trend)}</td>
-      <td>${fmtUSD(r.net_debt)} ${tmark(r.net_debt_trend)}</td></tr>`).join('') + '</tbody>';
+      <td>${pct(r.roic)} ${tmark(r.roic_trend)}</td>
+      <td>${r.net_debt_to_ebitda == null ? '—' : Number(r.net_debt_to_ebitda).toFixed(1) + '×'} ${tmark(r.net_debt_to_ebitda_trend)}</td>
+      <td>${r.current_ratio == null ? '—' : Number(r.current_ratio).toFixed(2)} ${tmark(r.current_ratio_trend)}</td>
+      <td>${r.ccc == null ? '—' : Math.round(r.ccc) + 'd'} ${tmark(r.ccc_trend)}</td>
+      <td>${r.fcf_payout == null ? '—' : Math.round(r.fcf_payout * 100) + '%'} ${tmark(r.fcf_payout_trend)}</td></tr>`).join('') + '</tbody>';
 
   const sec = (t, v) => v ? `<h3>${t}</h3><div class="report">${mdInline(v)}</div>` : '';
   const list = (t, arr) => (arr && arr.length)

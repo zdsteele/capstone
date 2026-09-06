@@ -398,8 +398,11 @@ def api_health(cik):
             f"""
             SELECT fiscal_year, fiscal_period, period_end, revenue, revenue_growth_yoy,
                    gross_margin, operating_margin, net_margin, fcf, fcf_margin,
-                   net_debt, return_on_equity, roic_approx,
-                   operating_margin_trend, fcf_margin_trend, roic_approx_trend, net_debt_trend
+                   net_debt_full AS net_debt, roic, current_ratio, net_debt_to_ebitda,
+                   interest_coverage, ccc, dividend_payout, fcf_payout, sbc_pct_revenue,
+                   operating_margin_trend, fcf_margin_trend, roic_trend,
+                   net_debt_full_trend AS net_debt_trend, current_ratio_trend,
+                   net_debt_to_ebitda_trend, ccc_trend, fcf_payout_trend
             FROM {T('gold_financial_ratios')} WHERE cik = ? ORDER BY period_end DESC LIMIT 12
             """,
             [cik],
@@ -434,12 +437,20 @@ def api_health(cik):
         )
     except Exception:
         insider = []
+    try:
+        profile = warehouse.query(
+            f"SELECT * EXCEPT (cik, model, generated_at) FROM {T('gold_business_profile')} WHERE cik = ?",
+            [cik],
+        )
+    except Exception:
+        profile = []
     return jsonify({
         "health": h[0] if h else None,
         "ratios": ratios,
         "valuation": val[0] if val else None,
         "governance": gov[0] if gov else None,
         "insider": insider[0] if insider else None,
+        "profile": profile[0] if profile else None,
     })
 
 
