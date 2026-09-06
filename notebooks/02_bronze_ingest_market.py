@@ -4,11 +4,16 @@
 # environment_version = "5"
 # ///
 # MAGIC %md
-# MAGIC # 02 · Bronze — market data (yfinance)
+# MAGIC # 02 · Bronze — market data (yfinance)  (incremental)
 # MAGIC
 # MAGIC Daily OHLCV bars for each pilot ticker, fetched in a `mapInPandas` partition
 # MAGIC function (one yfinance call per ticker). Lands `bronze_market_bars`, joined
 # MAGIC onto the company/period grain in Silver for enrichment.
+# MAGIC
+# MAGIC **Incremental:** MERGE on `(cik, bar_date)`, refreshing matched rows (yfinance
+# MAGIC revises recent closes for splits / dividends). First run — or `mode=full` —
+# MAGIC pulls `full_period` (10y); later runs pull `incr_period` (5d) and only the
+# MAGIC new/updated days are merged in. History is never dropped.
 
 # COMMAND ----------
 
@@ -23,18 +28,27 @@ import datetime as dt
 dbutils.widgets.text("catalog", "bootcamp_students")
 dbutils.widgets.text("schema", "zdsteele_capstone")
 dbutils.widgets.text("ciks_config", "../config/ciks.json")
-dbutils.widgets.text("period", "10y")
+dbutils.widgets.dropdown("mode", "incremental", ["incremental", "full"])
+dbutils.widgets.text("full_period", "10y")
+dbutils.widgets.text("incr_period", "5d")
 
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
-PERIOD = dbutils.widgets.get("period")
+MODE = dbutils.widgets.get("mode")
+TABLE = f"{CATALOG}.{SCHEMA}.bronze_market_bars"
 
 with open(dbutils.widgets.get("ciks_config")) as fh:
     COMPANIES = json.load(fh)["companies"]
 
 INGESTED_AT = dt.datetime.utcnow().isoformat()
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
-print(f"tickers: {[c['ticker'] for c in COMPANIES]}  period={PERIOD}")
+spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
+
+FIRST_RUN = not spark.catalog.tableExists(TABLE)
+PERIOD = dbutils.widgets.get("full_period") if (FIRST_RUN or MODE == "full") \
+    else dbutils.widgets.get("incr_period")
+print(f"tickers: {[c['ticker'] for c in COMPANIES]}  mode={MODE} "
+      f"first_run={FIRST_RUN}  period={PERIOD}")
 
 # COMMAND ----------
 
@@ -112,13 +126,28 @@ bars = seed.mapInPandas(fetch_bars, schema=out_schema).withColumn(
 
 # COMMAND ----------
 
-# DBTITLE 1,Write bronze_market_bars
-n = bars.count()
-(
-    bars.write.format("delta")
-    .mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable(f"{CATALOG}.{SCHEMA}.bronze_market_bars")
+# DBTITLE 1,Write bronze_market_bars (MERGE on cik, bar_date)
+staged = bars.dropDuplicates(["cik", "bar_date"])
+
+if FIRST_RUN:
+    staged.write.format("delta").partitionBy("cik").saveAsTable(TABLE)
+    n_new = spark.table(TABLE).count()
+    print(f"created {n_new:,} rows -> bronze_market_bars")
+else:
+    staged.createOrReplaceTempView("_stg_market_bars")
+    spark.sql(
+        f"""
+        MERGE INTO {TABLE} t USING _stg_market_bars s
+          ON t.cik = s.cik AND t.bar_date = s.bar_date
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+        """
+    )
+    n_new = staged.count()
+    print(f"merged {n_new:,} staged rows -> bronze_market_bars "
+          f"(table now {spark.table(TABLE).count():,} rows)")
+
+dbutils.notebook.exit(
+    json.dumps({"status": "ok", "mode": MODE, "period": PERIOD,
+                "staged_rows": int(n_new), "ingested_at": INGESTED_AT})
 )
-print(f"wrote {n:,} rows -> bronze_market_bars")
-dbutils.notebook.exit(json.dumps({"status": "ok", "rows": n, "ingested_at": INGESTED_AT}))

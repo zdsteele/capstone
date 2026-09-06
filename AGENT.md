@@ -81,12 +81,29 @@ The deployed Databricks App gets Lakebase creds + the warehouse binding from
 
 ## Pipeline (run order, Databricks notebooks)
 
-`01_bronze_ingest_sec` → `02_bronze_ingest_market` → `03_silver_transform` →
-`04_gold_marts` → `08_filing_intelligence` → `09_financial_ratios` →
-`10_company_health` → `05_vector_search_index` (optional) →
-`06_analytics_cdf` (after there's app/agent activity) → `07_tag_capstone_tables` (optional).
+The `NN_` prefixes are a human build order — no notebook triggers the next.
+Dependency order: `01, 02 → 03 → {04, 05, 08} → 09 → 10`; `07` whenever;
+`06` is event-triggered (see Jobs). Full graph + cadence table in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Widgets default to `catalog=bootcamp_students`, `schema=zdsteele_capstone`.
+- **01 / 02 are incremental** — `mode` widget (`incremental` default | `full`).
+  Every bronze write is a Delta `MERGE`, never an overwrite: a scraping is never
+  lost if a CIK leaves `config/ciks.json` or ages out of the submissions window.
+  `mode=full` re-fetches in-window filings to repair missing Volume bytes.
+- **08 / 10** `MERGE` on accession/cik, so re-runs only send *new* filings to
+  `ai_query`.
+- Widgets default to `catalog=bootcamp_students`, `schema=zdsteele_capstone`.
+
+## Jobs (`databricks.yml`)
+
+| Job | Kind | Runs |
+|---|---|---|
+| `pipeline_daily_refresh` | scheduled, 06:30 America/New_York | 8-task chain 01→10 (skips 06, 07); **live only under `-t prod`** — dev mode auto-pauses schedules |
+| `analytics_cdf_on_change` | `trigger.table_update` on the 6 `lb_*_history` tables (60 s debounce) | `06_analytics_cdf.py` |
+
+`databricks bundle deploy -t dev` for local iteration (schedule paused);
+`databricks bundle deploy -t prod` to arm the daily job. The bundle also deploys
+the `edgar-intelligence` App.
 
 ## Conventions & gotchas
 

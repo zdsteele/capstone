@@ -4,7 +4,7 @@
 # environment_version = "5"
 # ///
 # MAGIC %md
-# MAGIC # 01 · Bronze — ingest SEC EDGAR
+# MAGIC # 01 · Bronze — ingest SEC EDGAR  (incremental)
 # MAGIC
 # MAGIC Pulls, per CIK in `config/ciks.json`:
 # MAGIC - the Submissions API payload (filing history + metadata)
@@ -16,6 +16,26 @@
 # MAGIC `lib/sec_client.SecClient` (token bucket ≤ 8 req/s, descriptive User-Agent,
 # MAGIC 429/5xx retry). Fetch is **driver-sequential** so the 10 req/s SEC cap is
 # MAGIC honored globally without a distributed rate limiter.
+# MAGIC
+# MAGIC ## Incremental contract
+# MAGIC
+# MAGIC Every write is a Delta **MERGE**, never an overwrite — a scraping is never
+# MAGIC lost, even if a CIK later leaves `config/ciks.json` or drops out of the
+# MAGIC submissions window.
+# MAGIC
+# MAGIC | Table | Key | On match |
+# MAGIC |---|---|---|
+# MAGIC | `bronze_company_submissions` | `cik` | refresh (filing list changes daily) |
+# MAGIC | `bronze_xbrl_facts` | `cik` | refresh (new facts each filing) |
+# MAGIC | `bronze_filings` | `cik, accession` | keep original |
+# MAGIC | `bronze_filing_documents` | `cik, accession, document` | keep original |
+# MAGIC | `bronze_filing_text` | `cik, accession, doc_kind` | keep original |
+# MAGIC
+# MAGIC - **`mode=incremental`** (default): an accession already in `bronze_filings`
+# MAGIC   whose Volume files exist is skipped — no HTTP for the primary doc or `.txt`.
+# MAGIC   Only genuinely new filings are fetched.
+# MAGIC - **`mode=full`**: re-fetches every in-window filing's documents (repair /
+# MAGIC   backfill missing Volume files). Still MERGE — nothing is dropped.
 
 # COMMAND ----------
 
@@ -35,7 +55,8 @@ from lib.sec_client import SecClient, cik10, accession_nodash, iter_recent_filin
 dbutils.widgets.text("catalog", "bootcamp_students")
 dbutils.widgets.text("schema", "zdsteele_capstone")
 dbutils.widgets.text("ciks_config", "../config/ciks.json")
-dbutils.widgets.text("max_filings_per_cik", "40")
+dbutils.widgets.dropdown("mode", "incremental", ["incremental", "full"])
+dbutils.widgets.text("max_new_filings_per_cik", "40")
 dbutils.widgets.text(
     "sec_user_agent",
     "EDGAR Intelligence Platform - Zach Steele zacharysteele8@gmail.com",
@@ -43,8 +64,10 @@ dbutils.widgets.text(
 
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
-MAX_FILINGS = int(dbutils.widgets.get("max_filings_per_cik"))
+MODE = dbutils.widgets.get("mode")
+MAX_NEW = int(dbutils.widgets.get("max_new_filings_per_cik"))
 USER_AGENT = dbutils.widgets.get("sec_user_agent")
+FULL = MODE == "full"
 
 with open(dbutils.widgets.get("ciks_config")) as fh:
     CFG = json.load(fh)
@@ -57,7 +80,30 @@ INGESTED_AT = dt.datetime.utcnow().isoformat()
 
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
 spark.sql(f"CREATE VOLUME IF NOT EXISTS {VOLUME}")
-print(f"catalog={CATALOG} schema={SCHEMA} companies={len(COMPANIES)} forms={sorted(FORMS)}")
+# let MERGE tolerate additive schema changes between runs
+spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
+print(f"catalog={CATALOG} schema={SCHEMA} mode={MODE} "
+      f"companies={len(COMPANIES)} forms={sorted(FORMS)}")
+
+# COMMAND ----------
+
+# DBTITLE 1,What's already ingested
+def _table_exists(name: str) -> bool:
+    return spark.catalog.tableExists(f"{CATALOG}.{SCHEMA}.{name}")
+
+
+if _table_exists("bronze_filings"):
+    seen_accessions = {
+        r["accession"]
+        for r in spark.table(f"{CATALOG}.{SCHEMA}.bronze_filings")
+        .select("accession")
+        .collect()
+    }
+else:
+    seen_accessions = set()
+
+print(f"{len(seen_accessions):,} filings already in bronze_filings"
+      f"{' — ignored (mode=full)' if FULL else ''}")
 
 # COMMAND ----------
 
@@ -65,6 +111,7 @@ print(f"catalog={CATALOG} schema={SCHEMA} companies={len(COMPANIES)} forms={sort
 client = SecClient(user_agent=USER_AGENT, requests_per_second=8.0)
 
 submission_rows, filing_rows, document_rows, facts_rows, text_rows = [], [], [], [], []
+skipped = 0
 
 for co in COMPANIES:
     cik_raw, ticker, name = co["cik"], co.get("ticker"), co.get("name")
@@ -87,7 +134,7 @@ for co in COMPANIES:
         }
     )
 
-    # companyfacts — the pre-extracted XBRL financial facts
+    # companyfacts — the pre-extracted XBRL financial facts (refreshed every run)
     try:
         facts = client.company_facts(c10)
         facts_rows.append(
@@ -108,17 +155,31 @@ for co in COMPANIES:
     except Exception as exc:  # some CIKs have no companyfacts
         print(f"  companyfacts unavailable: {exc}")
 
-    # filings — filter to the forms we care about, newest first, capped
-    kept = 0
+    # filings — newest first; take up to MAX_NEW that we haven't ingested yet
+    new_here = 0
     for f in iter_recent_filings(subs):
         if f.get("form") not in FORMS:
             continue
-        if kept >= MAX_FILINGS:
-            break
-        kept += 1
         accession = f.get("accessionNumber")
-        primary = f.get("primaryDocument") or ""
+        already = accession in seen_accessions
         accn_nd = accession_nodash(accession)
+        vol_dir = f"{VOLUME_ROOT}/{c10}/{accn_nd}"
+        primary = f.get("primaryDocument") or ""
+        primary_path = f"{vol_dir}/{primary}" if primary else ""
+        txt_path = f"{vol_dir}/{accn_nd}.txt"
+
+        files_present = (
+            (not primary or os.path.exists(primary_path))
+            and os.path.exists(txt_path)
+        )
+        if already and files_present and not FULL:
+            skipped += 1
+            continue
+        if not already:
+            if new_here >= MAX_NEW:
+                break
+            new_here += 1
+
         filing_rows.append(
             {
                 "cik": c10,
@@ -133,16 +194,14 @@ for co in COMPANIES:
                 "ingested_at": INGESTED_AT,
             }
         )
+        os.makedirs(vol_dir, exist_ok=True)
 
         # primary HTML document -> Volume + text
-        if primary:
+        if primary and (FULL or not os.path.exists(primary_path)):
             try:
                 raw = client.filing_document(c10, accession, primary)
                 ext = primary.rsplit(".", 1)[-1].lower() if "." in primary else "bin"
-                vol_dir = f"{VOLUME_ROOT}/{c10}/{accn_nd}"
-                os.makedirs(vol_dir, exist_ok=True)
-                vol_path = f"{vol_dir}/{primary}"
-                with open(vol_path, "wb") as out:
+                with open(primary_path, "wb") as out:
                     out.write(raw)
                 document_rows.append(
                     {
@@ -150,7 +209,7 @@ for co in COMPANIES:
                         "accession": accession,
                         "document": primary,
                         "source_format": ext,
-                        "volume_path": vol_path,
+                        "volume_path": primary_path,
                         "byte_size": len(raw),
                         "ingested_at": INGESTED_AT,
                     }
@@ -172,60 +231,97 @@ for co in COMPANIES:
                 print(f"  [{accession}] primary doc failed: {exc}")
 
         # full submission text file (Variety: mixed structured + unstructured)
-        try:
-            sub_txt = client.submission_txt(c10, accession)
-            vol_dir = f"{VOLUME_ROOT}/{c10}/{accn_nd}"
-            os.makedirs(vol_dir, exist_ok=True)
-            with open(f"{vol_dir}/{accn_nd}.txt", "wb") as out:
-                out.write(sub_txt)
-            body = sub_txt.decode("utf-8", errors="replace")
-            text_rows.append(
-                {
-                    "cik": c10,
-                    "accession": accession,
-                    "doc_kind": "submission_txt",
-                    "document": f"{accn_nd}.txt",
-                    "text": body[:8_000_000],
-                    "char_len": len(body),
-                    "ingested_at": INGESTED_AT,
-                }
-            )
-        except Exception as exc:
-            print(f"  [{accession}] submission .txt failed: {exc}")
+        if FULL or not os.path.exists(txt_path):
+            try:
+                sub_txt = client.submission_txt(c10, accession)
+                with open(txt_path, "wb") as out:
+                    out.write(sub_txt)
+                body = sub_txt.decode("utf-8", errors="replace")
+                text_rows.append(
+                    {
+                        "cik": c10,
+                        "accession": accession,
+                        "doc_kind": "submission_txt",
+                        "document": f"{accn_nd}.txt",
+                        "text": body[:8_000_000],
+                        "char_len": len(body),
+                        "ingested_at": INGESTED_AT,
+                    }
+                )
+            except Exception as exc:
+                print(f"  [{accession}] submission .txt failed: {exc}")
 
-    print(f"  kept {kept} filings")
+    print(f"  {new_here} new filing(s)")
 
 print(
     f"\nfetched: {len(submission_rows)} submissions, {len(facts_rows)} companyfacts, "
-    f"{len(filing_rows)} filings, {len(document_rows)} docs, {len(text_rows)} text blobs"
+    f"{len(filing_rows)} filings ({skipped} already-ingested skipped), "
+    f"{len(document_rows)} docs, {len(text_rows)} text blobs"
 )
 
 # COMMAND ----------
 
-# DBTITLE 1,Write Bronze Delta tables
-def _write(rows, table):
+# DBTITLE 1,Write Bronze Delta tables (MERGE upserts — never overwrite)
+def _upsert(rows, table, keys, refresh_on_match):
+    """MERGE `rows` into `table` on `keys`. `refresh_on_match=True` overwrites the
+    stored row (dimensions re-pulled every run); `False` keeps the first scraping
+    (immutable raw filing data). Creates the table on first run."""
+    fq = f"{CATALOG}.{SCHEMA}.{table}"
     if not rows:
         print(f"  (skip {table} — 0 rows)")
         return 0
-    (
-        spark.createDataFrame(rows)
-        .write.format("delta")
-        .mode("overwrite")
-        .option("overwriteSchema", "true")
-        .saveAsTable(f"{CATALOG}.{SCHEMA}.{table}")
+    df = spark.createDataFrame(rows)
+    if not spark.catalog.tableExists(fq):
+        df.write.format("delta").saveAsTable(fq)
+        print(f"  created {len(rows):>6} -> {table}")
+        return len(rows)
+
+    view = f"_stg_{table}"
+    df.createOrReplaceTempView(view)
+    on = " AND ".join(f"t.{k} = s.{k}" for k in keys)
+    matched = "WHEN MATCHED THEN UPDATE SET *\n" if refresh_on_match else ""
+    spark.sql(
+        f"""
+        MERGE INTO {fq} t USING {view} s ON {on}
+        {matched}WHEN NOT MATCHED THEN INSERT *
+        """
     )
-    print(f"  wrote {len(rows):>6} -> {table}")
+    n = spark.table(fq).count()
+    print(f"  merged {len(rows):>6} -> {table}  (table now {n:,} rows)")
     return len(rows)
 
-counts = {
-    "bronze_company_submissions": _write(submission_rows, "bronze_company_submissions"),
-    "bronze_filings": _write(filing_rows, "bronze_filings"),
-    "bronze_filing_documents": _write(document_rows, "bronze_filing_documents"),
-    "bronze_xbrl_facts": _write(facts_rows, "bronze_xbrl_facts"),
-    "bronze_filing_text": _write(text_rows, "bronze_filing_text"),
+
+merged = {
+    "bronze_company_submissions": _upsert(
+        submission_rows, "bronze_company_submissions", ["cik"], refresh_on_match=True
+    ),
+    "bronze_xbrl_facts": _upsert(
+        facts_rows, "bronze_xbrl_facts", ["cik"], refresh_on_match=True
+    ),
+    "bronze_filings": _upsert(
+        filing_rows, "bronze_filings", ["cik", "accession"], refresh_on_match=False
+    ),
+    "bronze_filing_documents": _upsert(
+        document_rows, "bronze_filing_documents",
+        ["cik", "accession", "document"], refresh_on_match=False
+    ),
+    "bronze_filing_text": _upsert(
+        text_rows, "bronze_filing_text",
+        ["cik", "accession", "doc_kind"], refresh_on_match=False
+    ),
 }
 
 # COMMAND ----------
 
 # DBTITLE 1,Exit
-dbutils.notebook.exit(json.dumps({"status": "ok", "counts": counts, "ingested_at": INGESTED_AT}))
+dbutils.notebook.exit(
+    json.dumps(
+        {
+            "status": "ok",
+            "mode": MODE,
+            "new_rows": merged,
+            "skipped_existing": skipped,
+            "ingested_at": INGESTED_AT,
+        }
+    )
+)
