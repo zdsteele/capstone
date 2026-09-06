@@ -80,8 +80,6 @@ INGESTED_AT = dt.datetime.utcnow().isoformat()
 
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
 spark.sql(f"CREATE VOLUME IF NOT EXISTS {VOLUME}")
-# let MERGE tolerate additive schema changes between runs
-spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
 print(f"catalog={CATALOG} schema={SCHEMA} mode={MODE} "
       f"companies={len(COMPANIES)} forms={sorted(FORMS)}")
 
@@ -272,7 +270,7 @@ def _upsert(rows, table, keys, refresh_on_match):
         return 0
     df = spark.createDataFrame(rows)
     if not spark.catalog.tableExists(fq):
-        df.write.format("delta").saveAsTable(fq)
+        df.write.format("delta").option("mergeSchema", "true").saveAsTable(fq)
         print(f"  created {len(rows):>6} -> {table}")
         return len(rows)
 
@@ -280,6 +278,8 @@ def _upsert(rows, table, keys, refresh_on_match):
     df.createOrReplaceTempView(view)
     on = " AND ".join(f"t.{k} = s.{k}" for k in keys)
     matched = "WHEN MATCHED THEN UPDATE SET *\n" if refresh_on_match else ""
+    # plain MERGE — row schemas are fixed here, so no schema evolution needed
+    # (the session-level autoMerge conf is rejected on serverless anyway).
     spark.sql(
         f"""
         MERGE INTO {fq} t USING {view} s ON {on}

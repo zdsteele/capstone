@@ -42,7 +42,6 @@ with open(dbutils.widgets.get("ciks_config")) as fh:
 
 INGESTED_AT = dt.datetime.utcnow().isoformat()
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
-spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
 
 FIRST_RUN = not spark.catalog.tableExists(TABLE)
 PERIOD = dbutils.widgets.get("full_period") if (FIRST_RUN or MODE == "full") \
@@ -130,11 +129,14 @@ bars = seed.mapInPandas(fetch_bars, schema=out_schema).withColumn(
 staged = bars.dropDuplicates(["cik", "bar_date"])
 
 if FIRST_RUN:
-    staged.write.format("delta").partitionBy("cik").saveAsTable(TABLE)
+    staged.write.format("delta").option("mergeSchema", "true") \
+        .partitionBy("cik").saveAsTable(TABLE)
     n_new = spark.table(TABLE).count()
     print(f"created {n_new:,} rows -> bronze_market_bars")
 else:
     staged.createOrReplaceTempView("_stg_market_bars")
+    # plain MERGE — fixed schema (the session-level autoMerge conf is rejected
+    # on serverless anyway).
     spark.sql(
         f"""
         MERGE INTO {TABLE} t USING _stg_market_bars s
