@@ -180,8 +180,12 @@ qoq = (
 rev_hist = (
     rev.withColumn("prev_y_revenue", F.lag("revenue").over(w_yoy))
     .join(qoq, ["cik", "fiscal_year", "fiscal_period"], "left")
-    .withColumn("yoy_pct", F.round((F.col("revenue") - F.col("prev_y_revenue")) / F.abs("prev_y_revenue") * 100, 2))
-    .withColumn("qoq_pct", F.round((F.col("revenue") - F.col("prev_q_revenue")) / F.abs("prev_q_revenue") * 100, 2))
+    # try_divide -> NULL when the prior figure is 0 (some 474-universe companies
+    # report exactly 0 revenue in a period); ANSI SQL raises on a raw `/ 0`.
+    .withColumn("yoy_pct", F.round(
+        F.try_divide(F.col("revenue") - F.col("prev_y_revenue"), F.abs("prev_y_revenue")) * 100, 2))
+    .withColumn("qoq_pct", F.round(
+        F.try_divide(F.col("revenue") - F.col("prev_q_revenue"), F.abs("prev_q_revenue")) * 100, 2))
 )
 rev_hist.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(
     T("gold_revenue_history")

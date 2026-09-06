@@ -35,7 +35,10 @@ TAX = 0.21  # assumed effective rate for NOPAT (spec §9)
 
 
 def safe_div(a, b):
-    return F.when((F.col(b).isNotNull()) & (F.col(b) != 0), F.col(a) / F.col(b))
+    # try_divide -> NULL on a zero/NULL divisor. Belt-and-suspenders over the
+    # explicit guard, because serverless ANSI SQL raises on any raw `/ 0` and
+    # at 474-company scale plenty of line items are exactly 0.
+    return F.try_divide(F.col(a), F.col(b))
 
 # COMMAND ----------
 
@@ -106,21 +109,12 @@ r = (
     .withColumn("equity_ratio", safe_div("stockholders_equity", "total_assets"))
     # ROE / ROA / ROIC annualized (quarterly earnings x4) so trends & the FY row
     # are on the same basis
-    .withColumn(
-        "return_on_equity",
-        F.when((F.col("stockholders_equity").isNotNull()) & (F.col("stockholders_equity") != 0),
-               F.col("net_income") * F.col("_ann") / F.col("stockholders_equity")),
-    )
-    .withColumn(
-        "return_on_assets",
-        F.when((F.col("total_assets").isNotNull()) & (F.col("total_assets") != 0),
-               F.col("net_income") * F.col("_ann") / F.col("total_assets")),
-    )
-    .withColumn(
-        "diluted_shares_approx",
-        F.when(F.col("eps_diluted").isNotNull() & (F.col("eps_diluted") != 0),
-               F.col("net_income") / F.col("eps_diluted")),
-    )
+    .withColumn("return_on_equity",
+                F.try_divide(F.col("net_income") * F.col("_ann"), F.col("stockholders_equity")))
+    .withColumn("return_on_assets",
+                F.try_divide(F.col("net_income") * F.col("_ann"), F.col("total_assets")))
+    .withColumn("diluted_shares_approx",
+                F.try_divide(F.col("net_income"), F.col("eps_diluted")))
     .withColumn(
         "invested_capital_approx",
         F.col("total_liabilities") + F.col("stockholders_equity") - F.col("cash_and_equivalents"),
@@ -128,7 +122,8 @@ r = (
     .withColumn(
         "roic_approx",
         F.when(F.col("invested_capital_approx") > 0,
-               (F.col("operating_income") * F.col("_ann") * (1 - TAX)) / F.col("invested_capital_approx")),
+               F.try_divide(F.col("operating_income") * F.col("_ann") * (1 - TAX),
+                            F.col("invested_capital_approx"))),
     )
     .withColumn("revenue_per_share", safe_div("revenue", "diluted_shares_approx"))
     .withColumn("fcf_per_share", safe_div("fcf", "diluted_shares_approx"))
