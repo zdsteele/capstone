@@ -89,23 +89,24 @@ The deployed Databricks App gets Lakebase creds + the warehouse binding from
 ## Pipeline (run order, Databricks notebooks)
 
 The `NN_` prefixes are a human build order — no notebook triggers the next.
-Dependency order: `01, 02 → 03 → {04, 05, 08} → 09 → 10`; `07` whenever;
-`06` is event-triggered (see Jobs). Full graph + cadence table in
+Dependency order: `01 → 03 → {04, 05, 08, 12} → 09 → 11 → 10`; `02` alongside
+`01` (best-effort); `07` whenever; `06` is event-triggered (see Jobs). `13-14`
+(ownership/governance) run standalone. Full graph + cadence table in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 - **01 / 02 are incremental** — `mode` widget (`incremental` default | `full`).
   Every bronze write is a Delta `MERGE`, never an overwrite: a scraping is never
   lost if a CIK leaves `config/ciks.json` or ages out of the submissions window.
   `mode=full` re-fetches in-window filings to repair missing Volume bytes.
-- **08 / 10** `MERGE` on accession/cik, so re-runs only send *new* filings to
-  `ai_query`.
+- **08 / 10 / 12** `MERGE` on accession/cik, so re-runs only send *new*
+  filings to `ai_query`.
 - Widgets default to `catalog=bootcamp_students`, `schema=zdsteele_capstone`.
 
 ## Jobs (`databricks.yml`)
 
 | Job | Kind | Runs |
 |---|---|---|
-| `pipeline_daily_refresh` | scheduled, 06:30 America/New_York | 8-task chain 01→10 (skips 06, 07); **live only under `-t prod`** — dev mode auto-pauses schedules |
+| `pipeline_daily_refresh` | scheduled, 06:30 America/New_York | chain 01→12 (skips 06, 07, 13, 14); **live only under `-t prod`** — dev mode auto-pauses schedules |
 | `analytics_cdf_on_change` | `trigger.table_update` on the 6 `lb_*_history` tables (60 s debounce) | `06_analytics_cdf.py` |
 
 `databricks bundle deploy -t dev` for local iteration (schedule paused);
@@ -128,8 +129,9 @@ role). Resource paths: `databricks postgres list-branches projects/zdsteele-caps
 
 - **Commits**: imperative subject, `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.
   Working on `main` (solo capstone repo). Line endings normalize to CRLF on Windows checkout — harmless.
-- **`databricks-langchain==0.16.1` is pinned** — newer releases pull
-  `openai-agents` / `mcp` and blow up pip's resolver. `ChatOpenAI` against the
+- **`databricks-langchain==0.4.0` is pinned** — 0.16.x needs `langchain>=1.0` +
+  `databricks-mcp` + `databricks-openai` and cannot resolve alongside the
+  langchain 0.3 line; 0.5+ pulls `databricks-connect`. `ChatOpenAI` against the
   serving endpoint does NOT parse Llama's tool-call format (`<function=…>` text),
   so `agent/graph.py` uses `ChatDatabricks`.
 - **`ai_query` on this workspace** does not support `responseFormat` (`'json_object'`
