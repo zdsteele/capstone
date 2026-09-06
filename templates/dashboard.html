@@ -77,8 +77,13 @@ async function load() {
   currentCik = cik;
   document.getElementById('d-hint').hidden = true;
   // load both so tab switches are instant; health leads
-  loadHealth(cik);
-  loadFinancials(cik);
+  loadHealth(cik).catch(e => {
+    document.getElementById('h-note').textContent = 'Could not load the health assessment: ' + e.message;
+  });
+  loadFinancials(cik).catch(e => {
+    document.getElementById('d-latest').innerHTML =
+      '<tr><td class="error">Could not load financials: ' + e.message + '</td></tr>';
+  });
 }
 document.getElementById('d-load').addEventListener('click', load);
 document.getElementById('d-company').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });

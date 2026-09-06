@@ -60,9 +60,19 @@ def _connection():
 
 
 def _clean(v):
-    """Make a warehouse value JSON-safe: NaN/Inf -> None, Decimal -> float,
-    date/datetime -> isoformat, and ARRAY/STRUCT/MAP columns (which the connector
-    hands back as JSON strings when pyarrow is absent) -> parsed Python objects."""
+    """Make a warehouse value JSON-safe, recursively. Handles: numpy arrays/scalars
+    (the connector returns these for ARRAY/STRUCT columns when pyarrow IS present)
+    and JSON strings (when it isn't); NaN/Inf -> None; Decimal -> float;
+    date/datetime -> isoformat; nested lists/dicts."""
+    # numpy ndarray (ARRAY<...> columns) — before the .item() check below
+    if hasattr(v, "tolist") and not isinstance(v, (str, bytes, bytearray)):
+        return _clean(v.tolist())
+    if isinstance(v, (list, tuple)):
+        return [_clean(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _clean(x) for k, x in v.items()}
+    if isinstance(v, bool):
+        return v
     if isinstance(v, float):
         return v if math.isfinite(v) else None
     if isinstance(v, Decimal):
@@ -70,6 +80,12 @@ def _clean(v):
         return f if math.isfinite(f) else None
     if isinstance(v, (_dt.date, _dt.datetime)):
         return v.isoformat()
+    # numpy scalar (np.int64 / np.float64 / np.str_ / np.bool_) — has .item()
+    if hasattr(v, "item") and not isinstance(v, (str, bytes, bytearray)):
+        try:
+            return _clean(v.item())
+        except Exception:
+            return v
     if isinstance(v, str) and len(v) >= 2 and v[0] in "[{" and v[-1] in "]}":
         try:
             return json.loads(v)
