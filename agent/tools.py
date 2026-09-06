@@ -247,6 +247,68 @@ def build_tools(ctx: ToolContext) -> list:
             )
 
     @tool
+    def screen_companies(
+        metric: str = "overall_score", worst_first: bool = False, limit: int = 10,
+        direction: str | None = None, min_score: int | None = None,
+        max_score: int | None = None, sector: str | None = None,
+    ) -> str:
+        """Rank / screen ALL covered companies by their AI health assessment.
+        Use this for 'which companies are the healthiest / least healthy',
+        'worst balance sheets', 'deteriorating companies', 'best cash generation
+        in Technology', etc. — anything spanning the universe rather than one name.
+        `metric`: overall_score | growth_quality | profitability | cash_generation
+        | balance_sheet | capital_allocation | capital_efficiency.
+        `worst_first=True` for the weakest. `direction`: Improving | Stable |
+        Deteriorating. `min_score`/`max_score` filter overall_score. `sector`
+        filters on the business-profile sector."""
+        with record_action(
+            ctx, "screen_companies", "retrieval",
+            {"metric": metric, "worst_first": worst_first, "limit": limit,
+             "direction": direction, "sector": sector},
+        ) as rec:
+            allowed = {"overall_score", "growth_quality", "profitability",
+                       "cash_generation", "balance_sheet", "capital_allocation",
+                       "capital_efficiency"}
+            m = metric if metric in allowed else "overall_score"
+            col = "h.overall_score" if m == "overall_score" else f"h.scores.{m}"
+            # extra projected column only when ranking on a sub-score (avoids a
+            # duplicate `overall_score` in the select list)
+            extra = "" if m == "overall_score" else f", {col} AS {m}"
+            order = "ASC" if worst_first else "DESC"
+            lim = min(int(limit), 50)
+
+            def _run(with_bp: bool):
+                where = ["h.overall_score IS NOT NULL"]
+                p: list = []
+                if direction:
+                    where.append("lower(h.direction) = ?"); p.append(direction.strip().lower())
+                if min_score is not None:
+                    where.append("h.overall_score >= ?"); p.append(int(min_score))
+                if max_score is not None:
+                    where.append("h.overall_score <= ?"); p.append(int(max_score))
+                sel = "bp.sector" if with_bp else "cast(null as string) AS sector"
+                join = f"LEFT JOIN {T('gold_business_profile')} bp ON bp.cik = h.cik" if with_bp else ""
+                if with_bp and sector:
+                    where.append("lower(bp.sector) LIKE ?"); p.append(f"%{sector.strip().lower()}%")
+                return _wq(
+                    f"""
+                    SELECT h.ticker, h.name, {sel}, h.overall_score, h.overall_label,
+                           h.direction, h.primary_strength, h.primary_risk{extra}
+                    FROM {T('gold_company_health')} h {join}
+                    WHERE {' AND '.join(where)}
+                    ORDER BY {col} {order} NULLS LAST
+                    LIMIT {lim}
+                    """,
+                    p,
+                )
+
+            rows = _run(with_bp=True)
+            if rows and isinstance(rows[0], dict) and "_error" in rows[0]:
+                rows = _run(with_bp=False)   # gold_business_profile not built yet
+            rec["result"] = rows
+            return _rows_or_msg(rows, "No health assessments yet (run notebook 10).")
+
+    @tool
     def get_business_profile(company: str) -> str:
         """What the business actually is (analyst spec §2): primary business,
         revenue model, reportable segments, geographies, key customers &
@@ -642,7 +704,7 @@ def build_tools(ctx: ToolContext) -> list:
 
     return [
         search_company, search_filings, get_filing, get_filing_intelligence,
-        get_business_profile, get_8k_events, get_filing_changes,
+        screen_companies, get_business_profile, get_8k_events, get_filing_changes,
         get_financial_ratios, get_valuation, get_company_health,
         get_financial_metric, compare_companies,
         search_filing_text, read_filing_section, get_saved_research,

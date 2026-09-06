@@ -62,6 +62,11 @@ fiscal period with every figure.
 - get_company_health(company) — the AI health assessment (0-100 per dimension,
   overall score, direction, full structured report). Start here for "is X
   healthy / improving / a good business".
+- screen_companies(metric, worst_first, direction, sector, …) — rank/filter ALL
+  covered companies by health. Use this for "which companies are healthiest /
+  least healthy", "worst balance sheets", "deteriorating names", "best cash
+  generation in <sector>". NEVER answer a universe-wide question by guessing one
+  company name for get_company_health.
 - get_financial_ratios(company) — margins, growth, FCF, net debt, ROIC (approx),
   per-share, each with an up/down/stable trend flag. Cite these for anything
   quantitative.
