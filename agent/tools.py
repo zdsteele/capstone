@@ -354,20 +354,23 @@ def build_tools(ctx: ToolContext) -> list:
 
     @tool
     def search_filing_text(query: str, company: str | None = None, k: int = 5) -> str:
-        """Search parsed filing text (10-K/10-Q sections). Returns the top matching
-        chunks with their filing accession and section."""
+        """Semantic + keyword (hybrid) search over parsed 10-K/10-Q filing text —
+        business, risk factors, MD&A. Returns the top matching passages, each with
+        its filing accession, section, and the FULL section text it came from
+        (`parent_text`) so you can quote and reason from real context, not a
+        fragment. Use this to answer 'what does <company> say about <topic>'."""
         with record_action(
             ctx, "search_filing_text", "retrieval",
             {"query": query, "company": company, "k": k},
         ) as rec:
             cik = _resolve_cik(company) if company else None
             hits = _vector_search(ctx, query, cik, k) if ctx.vs_index else None
-            if hits is None:
+            if not hits:
                 like = f"%{query}%"
                 hits = _wq(
                     f"""
                     SELECT chunk_id, cik, accession, section, heading,
-                           left(chunk_text, 600) AS chunk_text
+                           substring(chunk_text, 1, 1200) AS chunk_text
                     FROM {T('silver_filing_text_chunks')}
                     WHERE chunk_text ILIKE ? AND (? IS NULL OR cik = ?)
                     LIMIT {min(int(k), 20)}
@@ -376,6 +379,38 @@ def build_tools(ctx: ToolContext) -> list:
                 )
             rec["result"] = hits
             return _rows_or_msg(hits, f"No filing text matched '{query}'.")
+
+    @tool
+    def read_filing_section(accession: str, section: str) -> str:
+        """Return the FULL text of one section of a filing — e.g.
+        section='Item 1A' (risk factors), 'Item 7' (MD&A), 'Item 1' (business),
+        'Item 8.01'. Use when the user wants a thorough read of a specific part
+        rather than a keyword search. `accession` is the dashed SEC number."""
+        with record_action(
+            ctx, "read_filing_section", "retrieval",
+            {"accession": accession, "section": section},
+        ) as rec:
+            want = section.strip().lower().replace("item", "").strip()
+            rows = _wq(
+                f"""
+                SELECT section, heading, char_len,
+                       substring(text, 1, 14000) AS text
+                FROM {T('silver_filing_sections')}
+                WHERE accession = ?
+                  AND lower(replace(section, 'Item', '')) LIKE ?
+                ORDER BY section_index
+                """,
+                [accession, f"%{want}%"],
+            )
+            rec["result"] = rows
+            if not rows or "_error" in rows[0]:
+                avail = _wq(
+                    f"SELECT section FROM {T('silver_filing_sections')} WHERE accession = ? ORDER BY section_index",
+                    [accession],
+                )
+                names = ", ".join(r.get("section", "?") for r in avail) if avail else "none"
+                return f"No section matching '{section}' in {accession}. Available: {names}"
+            return json.dumps(rows, default=str, indent=2)
 
     @tool
     def get_saved_research() -> str:
@@ -528,7 +563,8 @@ def build_tools(ctx: ToolContext) -> list:
     return [
         search_company, search_filings, get_filing, get_filing_intelligence,
         get_financial_ratios, get_company_health,
-        get_financial_metric, compare_companies, search_filing_text, get_saved_research,
+        get_financial_metric, compare_companies,
+        search_filing_text, read_filing_section, get_saved_research,
         save_filing, save_company_to_watchlist, create_research_note,
         update_research_note, remove_from_watchlist,
     ]
@@ -539,14 +575,19 @@ def build_tools(ctx: ToolContext) -> list:
 # Falls back to keyword ILIKE when VS_INDEX is unset (see search_filing_text).
 # ---------------------------------------------------------------------------
 
-def _vector_search(ctx: ToolContext, query: str, cik: str | None, k: int):
-    try:
-        from databricks.sdk import WorkspaceClient
+_VS_COLS_FULL = ["chunk_id", "cik", "accession", "ticker", "form",
+                 "section", "heading", "chunk_text", "parent_text"]
+_VS_COLS_BASE = _VS_COLS_FULL[:-1]  # for an index built before parent_text existed
 
-        w = WorkspaceClient()
+
+def _vector_search(ctx: ToolContext, query: str, cik: str | None, k: int):
+    from databricks.sdk import WorkspaceClient
+
+    w = WorkspaceClient()
+
+    def _query(cols):
         body = {
-            "columns": ["chunk_id", "cik", "accession", "ticker", "form",
-                        "section", "heading", "chunk_text"],
+            "columns": cols,
             "query_text": query,
             "num_results": min(int(k), 20),
             "query_type": "hybrid",
@@ -556,8 +597,13 @@ def _vector_search(ctx: ToolContext, query: str, cik: str | None, k: int):
         res = w.api_client.do(
             "POST", f"/api/2.0/vector-search/indexes/{ctx.vs_index}/query", body=body
         )
-        cols = [c["name"] for c in res.get("manifest", {}).get("columns", [])]
-        data = res.get("result", {}).get("data_array", []) or []
-        return [dict(zip(cols, row)) for row in data]
+        rc = [c["name"] for c in res.get("manifest", {}).get("columns", [])]
+        return [dict(zip(rc, row)) for row in res.get("result", {}).get("data_array", []) or []]
+
+    try:
+        return _query(_VS_COLS_FULL)
     except Exception:
-        return None
+        try:
+            return _query(_VS_COLS_BASE)   # index predates the parent_text column
+        except Exception:
+            return None

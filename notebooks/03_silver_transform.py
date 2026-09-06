@@ -245,15 +245,20 @@ print("silver_exhibits:", silver_exhibits.count())
 # COMMAND ----------
 
 # DBTITLE 1,silver_filing_text_chunks  (CDF enabled -> feeds Vector Search)
+# ~1100/150 chars (~170/25 tokens): SEC narrative prose is dense and
+# long-sentenced — 400-char chunks fragment a single risk/MD&A point. Larger
+# chunks + the section-level `parent_text` join in notebook 05 give the
+# parent-child pattern (precise retrieval, full-section context to the LLM).
 chunk_rows = []
 for r in section_rows:
-    for j, ch in enumerate(chunk_text(r["text"], 400, 60)):
+    for j, ch in enumerate(chunk_text(r["text"], 1100, 150)):
         chunk_rows.append(
             {
                 "chunk_id": f"{r['accession']}::{r['section_index']}::{j}",
                 "cik": r["cik"],
                 "accession": r["accession"],
                 "section": r["section"],
+                "section_index": r["section_index"],
                 "heading": r["heading"],
                 "chunk_index": j,
                 "chunk_text": ch,
@@ -265,7 +270,7 @@ spark.sql(
     f"""
     CREATE TABLE IF NOT EXISTS {T('silver_filing_text_chunks')} (
         chunk_id STRING, cik STRING, accession STRING, section STRING,
-        heading STRING, chunk_index INT, chunk_text STRING
+        section_index INT, heading STRING, chunk_index INT, chunk_text STRING
     ) USING DELTA TBLPROPERTIES (delta.enableChangeDataFeed = true)
     """
 )

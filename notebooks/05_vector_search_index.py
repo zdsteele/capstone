@@ -6,10 +6,14 @@
 # MAGIC %md
 # MAGIC # 05 · Vector Search — semantic retrieval over filing text
 # MAGIC
-# MAGIC 1. Build `silver_filing_chunks_enriched`: each chunk prefixed with its
-# MAGIC    company / form / period / section (context-enriched embedding — day-2
-# MAGIC    "contextual retrieval" idea, done deterministically so it scales).
-# MAGIC 2. Create a `DELTA_SYNC` Vector Search index on the `embed_text` column
+# MAGIC 1. Build `silver_filing_chunks_enriched`:
+# MAGIC    - `embed_text` — the chunk prefixed with company / form / period / section
+# MAGIC      (context-enriched embedding — day-2 "contextual retrieval", deterministic
+# MAGIC      so it scales). This is the column that gets embedded.
+# MAGIC    - `parent_text` — the **full section** the chunk came from (≤6k chars).
+# MAGIC      Parent-child retrieval: match on the small chunk, hand the whole
+# MAGIC      section to the LLM so it doesn't reason from a fragment.
+# MAGIC 2. Create a `DELTA_SYNC` Vector Search index on `embed_text`
 # MAGIC    (`databricks-gte-large-en`), queried with **hybrid** (dense + BM25) in
 # MAGIC    the agent's `search_filing_text` tool.
 # MAGIC
@@ -54,10 +58,13 @@ spark.sql(
             concat('Section ', coalesce(k.section, ''),
                    CASE WHEN k.heading IS NOT NULL AND k.heading <> '' THEN concat(' — ', k.heading) ELSE '' END),
             k.chunk_text
-        ) AS embed_text
+        ) AS embed_text,
+        substring(s.text, 1, 6000) AS parent_text
     FROM {T('silver_filing_text_chunks')} k
     LEFT JOIN {T('silver_filings')}   f ON f.accession = k.accession
     LEFT JOIN {T('silver_companies')} c ON c.cik = k.cik
+    LEFT JOIN {T('silver_filing_sections')} s
+           ON s.accession = k.accession AND s.section_index = k.section_index
     """
 )
 n = spark.table(SOURCE_TABLE).count()

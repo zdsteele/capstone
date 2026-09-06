@@ -24,8 +24,12 @@ TOOLS — lead with synthesis, then ground it:
 - `get_financial_ratios(company)` — margins, growth, FCF, net debt, ROIC (approx),
   per-share, with up/down/stable trend flags. Cite these for anything quantitative.
 - `get_financial_metric` / `compare_companies` — exact XBRL values / cross-company.
-- `search_filing_text(query, company)` — semantic search over filing text for
-  supporting passages and management commentary.
+- `search_filing_text(query, company)` — hybrid semantic + keyword search over
+  filing text. Each hit includes `parent_text`, the FULL section it came from —
+  quote and reason from that, not the short snippet.
+- `read_filing_section(accession, section)` — the complete text of one section
+  (e.g. 'Item 1A' risk factors, 'Item 7' MD&A). Use when the user wants a
+  thorough read of a specific part rather than a keyword lookup.
 - `get_filing` / `search_filings` / `search_company` — navigation.
 - Write tools (`save_filing`, `save_company_to_watchlist`, `create_research_note`,
   `update_research_note`, `remove_from_watchlist`) — call these when the user asks
