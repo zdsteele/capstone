@@ -17,9 +17,11 @@
 # MAGIC | `silver_filing_text_chunks` | `silver_filing_sections` | **`mapInPandas`** 1100/150 chunks, CDF enabled |
 # MAGIC
 # MAGIC The parse helpers in `lib/edgar_parse.py` are pure-Python (only `re`) — they
-# MAGIC run inside the `mapInPandas` UDFs on executors via `addPyFile`, so nothing
-# MAGIC is `collect()`-ed to the driver. This is what lets it handle ~500 companies
-# MAGIC × years of filings without OOMing.
+# MAGIC run inside the `mapInPandas` UDFs on executors (shipped via
+# MAGIC `cloudpickle.register_pickle_by_value`, which works on serverless where
+# MAGIC `sparkContext.addPyFile` does not), so nothing is `collect()`-ed to the
+# MAGIC driver. This is what lets it handle ~500 companies × years of filings
+# MAGIC without OOMing.
 
 # COMMAND ----------
 
@@ -32,9 +34,17 @@ _repo_root = os.path.abspath(os.path.join(os.getcwd(), ".."))
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
-# ship the pure-Python parser to executors for the mapInPandas UDFs
-_edgar_parse_path = os.path.join(_repo_root, "lib", "edgar_parse.py")
-spark.sparkContext.addPyFile(_edgar_parse_path)
+# Ship the pure-Python parser to executors for the mapInPandas UDFs.
+# Serverless has no spark.sparkContext (so no addPyFile) — register the module
+# for pickle-by-value instead: cloudpickle then serialises edgar_parse's
+# functions into the UDF closure and no `lib` package is needed on executors.
+from lib import edgar_parse
+
+try:
+    from pyspark import cloudpickle as _cp
+except Exception:
+    import cloudpickle as _cp
+_cp.register_pickle_by_value(edgar_parse)
 
 dbutils.widgets.text("catalog", "bootcamp_students")
 dbutils.widgets.text("schema", "zdsteele_capstone")
@@ -43,22 +53,16 @@ CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 T = lambda name: f"{CATALOG}.{SCHEMA}.{name}"
 
-spark.conf.set("spark.sql.shuffle.partitions", dbutils.widgets.get("shuffle_partitions"))
+try:  # serverless auto-tunes shuffle; harmless if it rejects the set
+    spark.conf.set("spark.sql.shuffle.partitions", dbutils.widgets.get("shuffle_partitions"))
+except Exception as _e:
+    print("shuffle_partitions not set:", _e)
 
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
     StructType, StructField, StringType, DoubleType, LongType, IntegerType,
 )
 
-
-def _import_edgar_parse():
-    """Import the parser whether it's on the path as `lib.edgar_parse` (driver)
-    or as a top-level `edgar_parse` module (executor, via addPyFile)."""
-    try:
-        from lib import edgar_parse as ep
-    except Exception:
-        import edgar_parse as ep
-    return ep
 
 # COMMAND ----------
 
@@ -132,7 +136,6 @@ _FACT_COLS = [f.name for f in _FACTS_SCHEMA.fields]
 def _flatten_facts(iterator):
     import json as _json
     import pandas as pd
-    ep = _import_edgar_parse()
     for pdf in iterator:
         rows = []
         for _, r in pdf.iterrows():
@@ -140,7 +143,7 @@ def _flatten_facts(iterator):
                 payload = _json.loads(r["companyfacts_json"])
             except Exception:
                 continue
-            rows.extend(ep.flatten_company_facts(payload, r["cik"]))
+            rows.extend(edgar_parse.flatten_company_facts(payload, r["cik"]))
         yield pd.DataFrame(rows, columns=_FACT_COLS) if rows else pd.DataFrame(columns=_FACT_COLS)
 
 
@@ -226,12 +229,11 @@ _SEC_COLS = [f.name for f in _SEC_SCHEMA.fields]
 
 def _parse_sections(iterator):
     import pandas as pd
-    ep = _import_edgar_parse()
     for pdf in iterator:
         out = []
         for _, r in pdf.iterrows():
             try:
-                secs = ep.parse_filing_html(r["text"] or "")
+                secs = edgar_parse.parse_filing_html(r["text"] or "")
             except Exception:
                 secs = []
             for i, s in enumerate(secs):
@@ -275,12 +277,11 @@ _EXH_COLS = [f.name for f in _EXH_SCHEMA.fields]
 
 def _parse_exhibits(iterator):
     import pandas as pd
-    ep = _import_edgar_parse()
     for pdf in iterator:
         out = []
         for _, r in pdf.iterrows():
             try:
-                docs = ep.parse_submission_documents(r["text"] or "")
+                docs = edgar_parse.parse_submission_documents(r["text"] or "")
             except Exception:
                 docs = []
             for d in docs:
@@ -325,11 +326,10 @@ _CHUNK_COLS = [f.name for f in _CHUNK_SCHEMA.fields]
 
 def _chunk_sections(iterator):
     import pandas as pd
-    ep = _import_edgar_parse()
     for pdf in iterator:
         out = []
         for _, r in pdf.iterrows():
-            for j, ch in enumerate(ep.chunk_text(r["text"] or "", 1100, 150)):
+            for j, ch in enumerate(edgar_parse.chunk_text(r["text"] or "", 1100, 150)):
                 out.append({
                     "chunk_id": f"{r['accession']}::{r['section_index']}::{j}",
                     "cik": r["cik"], "accession": r["accession"],
