@@ -59,8 +59,11 @@ def _url() -> str:
     host = os.environ.get("PGHOST")
     if not host:
         raise RuntimeError(
-            "No Lakebase connection info. Set LAKEBASE_URL (local dev) or run "
-            "inside a Databricks App with the Lakebase instance bound (PGHOST…)."
+            "No Postgres connection configured. Set LAKEBASE_URL in .env "
+            "(`cp .env.example .env` first) — either your Databricks Lakebase "
+            "string or a local Postgres (see docs/SETUP.md § 'Running without "
+            "Databricks Lakebase'). PGHOST/PGUSER are only injected inside a "
+            "deployed Databricks App with the Lakebase instance bound."
         )
     user = os.environ.get("PGUSER", "users")
     db = os.environ.get("PGDATABASE", "databricks_postgres")

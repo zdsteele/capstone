@@ -105,6 +105,32 @@ the `lb_<table>_history` Delta tables the analytics job reads. `REPLICA IDENTITY
 FULL` (§2) is the source-side prerequisite. Details + status in
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## Running without Databricks Lakebase (local Postgres)
+
+For a fresh clone with no cloud access — the app boots, login + the agent's
+**write** tools work; the read screens (Companies / Dashboard / Filing Explorer)
+need the SQL warehouse, so they'll error without Databricks creds.
+
+```bash
+docker run -d --name edgar-pg -e POSTGRES_PASSWORD=edgar \
+  -e POSTGRES_DB=databricks_postgres -p 5432:5432 postgres:16
+
+PG="postgresql://postgres:edgar@localhost:5432/databricks_postgres"
+psql "$PG" -f sql/00_create_schema.sql
+psql "$PG" -f sql/10_operational_tables.sql
+psql "$PG" -f sql/20_seed.sql
+```
+
+`.env`:
+
+```
+LAKEBASE_URL=postgresql://postgres:edgar@localhost:5432/databricks_postgres?sslmode=disable
+LAKEBASE_SCHEMA=edgar
+```
+
+The `sql/` files are plain Postgres (`GENERATED ALWAYS AS IDENTITY`,
+`REPLICA IDENTITY FULL`) and run unchanged on Postgres 14+.
+
 ## 7. Run the app locally
 
 ```bash
