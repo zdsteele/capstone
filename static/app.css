@@ -268,6 +268,19 @@ table.grid.left td, table.grid.left th { text-align: left !important; white-spac
 .chatbar { display: flex; gap: 10px; margin-top: 12px; }
 .chatbar input { flex: 1; }
 
+/* assistant answer sources */
+.srcs { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.srcs-lbl {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin-right: 2px;
+}
+a.src {
+  font-size: 11px; padding: 3px 9px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--ink-2);
+  text-decoration: none;
+}
+a.src:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+
 /* ---------- AI briefing card ---------- */
 .intel {
   border: 1px solid var(--line);

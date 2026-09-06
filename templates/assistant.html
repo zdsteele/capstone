@@ -38,11 +38,22 @@ const msg = document.getElementById('msg');
 let history = [];
 let conversationId = null;
 
-function bubble(role, text, tools, confidence, confidenceReason) {
+function bubble(role, text, tools, confidence, confidenceReason, sources) {
   const el = document.createElement('div');
   el.className = 'bubble ' + role;
   if (role === 'assistant') el.innerHTML = renderMarkdown(text);
   else el.textContent = text;
+
+  if (sources && sources.length) {
+    const s = document.createElement('div');
+    s.className = 'srcs';
+    s.innerHTML = '<span class="srcs-lbl">Sources</span>' + sources.map(x => {
+      const sec = (x.sections || []).length ? ' · ' + x.sections.join(', ') : '';
+      const label = `${x.ticker || ''} ${x.form || ''}${x.filing_date ? ' (' + x.filing_date + ')' : ''}${sec}`.trim();
+      return `<a class="src" href="/filing/${escapeHtml(x.accession)}" target="_blank" rel="noopener">${escapeHtml(label)} ↗</a>`;
+    }).join('');
+    el.appendChild(s);
+  }
 
   if (confidence || (tools && tools.length)) {
     const meta = document.createElement('div');
@@ -87,7 +98,7 @@ form.addEventListener('submit', async (e) => {
     });
     conversationId = r.conversation_id;
     pending.remove();
-    bubble('assistant', r.reply || '(no reply)', r.tool_calls, r.confidence, r.confidence_reason);
+    bubble('assistant', r.reply || '(no reply)', r.tool_calls, r.confidence, r.confidence_reason, r.sources);
     history.push({ role: 'user', content: text });
     history.push({ role: 'assistant', content: r.reply || '' });
   } catch (err) {

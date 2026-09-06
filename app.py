@@ -539,9 +539,11 @@ def api_assistant_message():
             "uid": u["user_id"],
             "args": _json.dumps({"message": message}),
             "conf": result.get("confidence"),
-            "res": _json.dumps(
-                {"tool_calls": result["tool_calls"], "confidence_reason": result.get("confidence_reason")}
-            ),
+            "res": _json.dumps({
+                "tool_calls": result["tool_calls"],
+                "confidence_reason": result.get("confidence_reason"),
+                "sources": result.get("sources", []),
+            }),
         },
     )
     lakebase.run_write(
@@ -559,6 +561,7 @@ def api_assistant_message():
             "confidence": result.get("confidence"),
             "confidence_reason": result.get("confidence_reason"),
             "tool_calls": result["tool_calls"],
+            "sources": result.get("sources", []),
         }
     )
 
