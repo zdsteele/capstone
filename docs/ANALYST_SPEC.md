@@ -47,7 +47,7 @@ Legend: ✅ built · ◑ partial (built on the data we ingest; approximations no
 | 13 | Management & governance (DEF 14A) | ⏳ | Proxy not ingested → comp / incentive / board analysis out of scope for the pilot. |
 | 14 | Management credibility | ⏳ | Needs a guidance-extraction history (guidance vs actual over time). Not built. |
 | 15 | Accounting quality / forensic | ◑ | `gold_filing_intelligence.risk_themes` + `notable_items` surface impairments, restructuring, "one-time" repeats, restatement / material-weakness language from Items 1A/7/7A. No quantitative accrual/reserve ratio screen. Findings are described, not yet graded Normal/Watch/Elevated/Serious. |
-| 16 | Filing-language changes | ⏳ | Chunk table + Vector Search are in place (would support a consecutive-filing risk-section diff), but the period-over-period diff itself is not built. |
+| 16 | Filing-language changes | ◑ | The agent's `read_filing_section(accession, 'Item 1A')` can pull the full risk-factor section from two consecutive filings and the model can compare them on request. No automated period-over-period diff table yet. See `docs/RAG_REVIEW.md`. |
 | 17 | Sector-specific KPIs | ⏳ | Sector is classified (§2); per-sector KPI extraction (ARR/NRR, NIM/CET1, comps, backlog…) not built. |
 | 18 | Valuation | ⏳ | Deliberately out of scope — EV / P/E / EV-EBITDA / FCF-yield need live market data; this platform is SEC-filing-only. `gold_company_health` keeps COMPANY QUALITY strictly separate from valuation. |
 | 19 | Trend engine (↑ → ↓ ⚠) | ✅ | `gold_financial_ratios.*_trend` classifies every ratio up / stable / down / n-a on YoY change; health report leads with direction. |
@@ -57,10 +57,16 @@ Legend: ✅ built · ◑ partial (built on the data we ingest; approximations no
 | 23 | Data-integrity rules | ✅ | Discipline section below is enforced in `agent/prompt.py` (fact vs calc vs management vs interpretation; "Not available from the reviewed filings" instead of fabrication; GAAP primary). Every ratio row in `gold_financial_ratios` carries `cik` / `accession` / `fiscal_year` / `fiscal_period` / `period_end` provenance. |
 
 **Summary:** 8 sections fully built (3, 4, 19, 20, 21, 22, 23, plus income/cash
-core of 1), 6 partial on ingested data (2, 6, 8, 9, 15, and the history depth of
-1), 9 scoped-future because they need filing types beyond 10-K/10-Q/8-K
-(5, 7, 10, 11, 12, 13, 14, 16, 17) or live market data (18). The full-spec text
+core of 1), 7 partial on ingested data (2, 6, 8, 9, 15, 16, and the history depth
+of 1), 8 scoped-future because they need filing types beyond 10-K/10-Q/8-K
+(5, 7, 10, 11, 12, 13, 14, 17) or live market data (18). The full-spec text
 is preserved verbatim below so the target never drifts.
+
+**Reading the filings in full:** the agent now has `read_filing_section` (whole
+Item text) alongside `search_filing_text` (hybrid semantic search, which returns
+the full parent section, not just a snippet). Chunking was re-tuned for filing
+prose — see `docs/RAG_REVIEW.md` for the before/after against the bootcamp's
+chunking / embedding / retrieval labs.
 
 ## Health score dimensions (nb 10)
 
