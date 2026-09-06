@@ -33,7 +33,7 @@ Legend: ✅ built · ◑ partial (built on the data we ingest; approximations no
 | # | Spec section | Status | Where / why |
 |---|---|---|---|
 | 1 | Filings to analyze | ◑ | 10-K / 10-Q / 8-K ingested for the pilot CIKs; multi-period history in `silver_financial_facts` (latest Q, prior Q, YoY Q, annual — TTM derived). DEF 14A / 3/4/5 / 144 / 13D/G/F / S-1 / 424B not ingested (§11–13, 18). Quarter-vs-annual guard: `silver_financial_facts.period_type` + never compared unlabeled. |
-| 2 | First understand the business | ◑ | `gold_filing_intelligence.executive_summary` + `revenue_commentary` (LLM over Items 1/1A/7); `silver_companies.sic` for sector. No structured segment / geo / customer-concentration extraction yet. |
+| 2 | First understand the business | ✅ | `gold_business_profile` (nb 08, one row/company from the latest 10-K Item 1): primary_business, revenue_model, segments[], geographies[], key_customers[], customer_concentration, competitors[], sector, cyclicality, capital_intensity, regulatory_exposure, economic_drivers[]. Plus `gold_8k_events` for the between-quarters timeline. Agent `get_business_profile` + `get_8k_events`. |
 | 3 | Income statement analysis | ✅ | `gold_company_financials` (revenue, COGS, gross profit, opex, R&D, SG&A, operating income, interest, pretax, tax, net income, basic/diluted EPS & shares). `gold_financial_ratios` (nb 09): gross/operating/net margin, R&D % and SG&A % of revenue, revenue & EPS growth QoQ / YoY, operating-leverage flag, accel/stable/decel classification. |
 | 4 | Cash flow analysis | ✅ | `gold_financial_ratios`: OCF, capex, FCF, FCF margin, FCF growth, FCF conversion (FCF/NI), CFO conversion (OCF/NI), capex intensity. OCF/capex rebuilt to **discrete quarters** (Q2 = H1−Q1, Q3 = 9M−H1). No acquisitions / debt issuance / SBC line items (not in the companyfacts subset). |
 | 5 | Free cash flow bridge | ✅ | `gold_financial_ratios.bridge_*` — net income + D&A + SBC ± Δreceivables/inventory/payables/deferred-revenue → OCF; − capex → FCF, per period. `wc_change_total` isolates the working-capital swing. Concepts added to nb 04. |
@@ -47,7 +47,7 @@ Legend: ✅ built · ◑ partial (built on the data we ingest; approximations no
 | 13 | Management & governance (DEF 14A) | ⏳ | Proxy not ingested → comp / incentive / board analysis out of scope for the pilot. |
 | 14 | Management credibility | ⏳ | Needs a guidance-extraction history (guidance vs actual over time). Not built. |
 | 15 | Accounting quality / forensic | ◑ | `gold_filing_intelligence.risk_themes` + `notable_items` surface impairments, restructuring, "one-time" repeats, restatement / material-weakness language from Items 1A/7/7A. No quantitative accrual/reserve ratio screen. Findings are described, not yet graded Normal/Watch/Elevated/Serious. |
-| 16 | Filing-language changes | ◑ | The agent's `read_filing_section(accession, 'Item 1A')` can pull the full risk-factor section from two consecutive filings and the model can compare them on request. No automated period-over-period diff table yet. See `docs/RAG_REVIEW.md`. |
+| 16 | Filing-language changes | ✅ | `gold_filing_language_changes` (nb 12): every 10-K/10-Q vs the company's previous same-form filing — `change_summary`, `new_risks[]`, `removed_risks[]`, `escalated_topics[]` (demand/pricing/liquidity/litigation/AI/going-concern…), `tone_shift`, `materiality`. Boilerplate ignored. Agent `get_filing_changes` + a card on the Filing Explorer. |
 | 17 | Sector-specific KPIs | ⏳ | Sector is classified (§2); per-sector KPI extraction (ARR/NRR, NIM/CET1, comps, backlog…) not built. |
 | 18 | Valuation | ◑ | `gold_valuation` (nb 11): yfinance close × diluted shares → market cap, EV; P/E, EV/EBITDA, EV/EBIT, EV/Revenue, Price/FCF, FCF yield, Price/Book, **dividend / buyback / shareholder yield**. Flows from latest FY (annualised from 4 quarters otherwise). Still missing: forward P/E (needs analyst consensus — not a SEC datum) and peer / historical-range comparison. Agent `get_valuation` + Dashboard panel; strictly separate from company quality. |
 | 19 | Trend engine (↑ → ↓ ⚠) | ✅ | `gold_financial_ratios.*_trend` classifies every ratio up / stable / down / n-a on YoY change; health report leads with direction. |
@@ -56,9 +56,8 @@ Legend: ✅ built · ◑ partial (built on the data we ingest; approximations no
 | 22 | Final normal-investor summary | ✅ | `bottom_line` (plain-language paragraph) + `primary_strength` / `primary_risk` / `key_metric_next_quarter` + `financial_health` + `direction`. Prompt forbids a Buy/Sell call or price target from the health score. |
 | 23 | Data-integrity rules | ✅ | Discipline section below is enforced in `agent/prompt.py` (fact vs calc vs management vs interpretation; "Not available from the reviewed filings" instead of fabrication; GAAP primary). Every ratio row in `gold_financial_ratios` carries `cik` / `accession` / `fiscal_year` / `fiscal_period` / `period_end` provenance. |
 
-**Summary:** 14 sections fully built (3, 4, 5, 6, 7, 8, 9, 10, 19, 20, 21, 22, 23,
-plus the income/cash core of 1), 3 partial (2, 15, 16, 18 — narrative extraction
-depth and forward/peer valuation), 5 needing filing types beyond 10-K/10-Q/8-K
+**Summary:** 16 sections fully built (1-10, 16, 19-23), 2 partial (15 accounting
+grading, 18 forward/peer valuation), 5 needing filing types beyond 10-K/10-Q/8-K
 (5, 7, 10, 11, 12, 13, 14, 17) or live market data (18). The full-spec text
 is preserved verbatim below so the target never drifts.
 

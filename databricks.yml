@@ -140,6 +140,16 @@ resources:
               schema: "${var.schema}"
           timeout_seconds: 86400
 
+        - task_key: filing_diffs
+          depends_on:
+            - task_key: silver
+          notebook_task:
+            notebook_path: ./notebooks/12_filing_diffs.py
+            base_parameters:
+              catalog: "${var.catalog}"
+              schema: "${var.schema}"
+          timeout_seconds: 86400
+
         - task_key: financial_ratios
           depends_on:
             - task_key: gold_marts

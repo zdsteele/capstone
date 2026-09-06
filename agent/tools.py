@@ -247,6 +247,68 @@ def build_tools(ctx: ToolContext) -> list:
             )
 
     @tool
+    def get_business_profile(company: str) -> str:
+        """What the business actually is (analyst spec §2): primary business,
+        revenue model, reportable segments, geographies, key customers &
+        concentration, competitors, sector classification, cyclicality, capital
+        intensity, regulatory exposure, economic drivers. From the latest 10-K.
+        Call this FIRST for an unfamiliar company before analysing ratios."""
+        with record_action(ctx, "get_business_profile", "retrieval", {"company": company}) as rec:
+            cik = _resolve_cik(company)
+            if not cik:
+                return f"Could not resolve company '{company}'."
+            rows = _wq(
+                f"SELECT * EXCEPT (cik, model) FROM {T('gold_business_profile')} WHERE cik = ?",
+                [cik],
+            )
+            rec["result"] = rows
+            return _rows_or_msg(rows, f"No business profile for {company} (run notebook 08).")
+
+    @tool
+    def get_8k_events(company: str, limit: int = 15) -> str:
+        """Recent Form 8-K events for a company (analyst spec §2 timeline):
+        event_type, plain-English summary, materiality (high/medium/low), and the
+        key figures mentioned. 8-Ks announce material events between the periodic
+        reports — earnings, M&A, executive changes, financing, guidance, legal."""
+        with record_action(ctx, "get_8k_events", "retrieval", {"company": company, "limit": limit}) as rec:
+            cik = _resolve_cik(company)
+            if not cik:
+                return f"Could not resolve company '{company}'."
+            rows = _wq(
+                f"""
+                SELECT accession, filing_date, event_type, materiality, event_summary, key_figures
+                FROM {T('gold_8k_events')} WHERE cik = ?
+                ORDER BY filing_date DESC LIMIT {min(int(limit), 40)}
+                """,
+                [cik],
+            )
+            rec["result"] = rows
+            return _rows_or_msg(rows, f"No 8-K events for {company} (run notebook 08).")
+
+    @tool
+    def get_filing_changes(company: str, limit: int = 4) -> str:
+        """What materially changed between a company's consecutive 10-K/10-Q
+        filings (analyst spec §16): new risk factors, removed risks, topics that
+        escalated (demand, pricing, liquidity, litigation, AI, going concern…),
+        tone shift, materiality. Use for 'what changed', 'new risks', 'is
+        management more cautious' questions."""
+        with record_action(ctx, "get_filing_changes", "retrieval", {"company": company, "limit": limit}) as rec:
+            cik = _resolve_cik(company)
+            if not cik:
+                return f"Could not resolve company '{company}'."
+            rows = _wq(
+                f"""
+                SELECT accession, form, filing_date, prev_filing_date, tone_shift, materiality,
+                       change_summary, new_risks, removed_risks, escalated_topics
+                FROM {T('gold_filing_language_changes')} WHERE cik = ?
+                ORDER BY filing_date DESC LIMIT {min(int(limit), 12)}
+                """,
+                [cik],
+            )
+            rec["result"] = rows
+            return _rows_or_msg(rows, f"No filing-change analysis for {company} (run notebook 12).")
+
+    @tool
     def get_financial_ratios(
         company: str, fiscal_year: int | None = None, fiscal_period: str | None = None
     ) -> str:
@@ -580,6 +642,7 @@ def build_tools(ctx: ToolContext) -> list:
 
     return [
         search_company, search_filings, get_filing, get_filing_intelligence,
+        get_business_profile, get_8k_events, get_filing_changes,
         get_financial_ratios, get_valuation, get_company_health,
         get_financial_metric, compare_companies,
         search_filing_text, read_filing_section, get_saved_research,

@@ -19,6 +19,25 @@
     <p id="f-notable" class="muted"></p>
   </div>
 
+  <div id="f-event" class="intel" hidden>
+    <div class="intel-head"><strong>8-K event</strong>
+      <span id="f-event-type" class="badge"></span>
+      <span id="f-event-mat" class="tone"></span></div>
+    <p id="f-event-summary"></p>
+    <div id="f-event-figs" class="chips"></div>
+  </div>
+
+  <div id="f-changes" class="intel" hidden>
+    <div class="intel-head"><strong>What changed vs the prior filing</strong>
+      <span id="f-chg-tone" class="tone"></span>
+      <span id="f-chg-mat" class="badge"></span>
+      <span class="muted" id="f-chg-prev"></span></div>
+    <p id="f-chg-summary"></p>
+    <div id="f-chg-new"></div>
+    <div id="f-chg-removed"></div>
+    <div id="f-chg-escal" class="chips"></div>
+  </div>
+
   <div class="cols">
     <div>
       <h3>Sections</h3>
@@ -60,6 +79,33 @@ if (ACC) (async () => {
     tEl.textContent = tone; tEl.className = 'tone ' + tone;
     document.getElementById('f-risks').innerHTML =
       (intel.risk_themes || []).map(r => `<span class="chip">${r}</span>`).join('');
+  }
+
+  const ev = d.event;
+  if (ev) {
+    document.getElementById('f-event').hidden = false;
+    document.getElementById('f-event-type').textContent = (ev.event_type || '').replace(/_/g, ' ');
+    const em = document.getElementById('f-event-mat');
+    em.textContent = ev.materiality || ''; em.className = 'tone ' + (ev.materiality === 'high' ? 'deteriorating' : ev.materiality === 'low' ? 'improving' : 'stable');
+    document.getElementById('f-event-summary').textContent = ev.event_summary || '';
+    document.getElementById('f-event-figs').innerHTML =
+      (ev.key_figures || []).map(x => `<span class="chip">${x}</span>`).join('');
+  }
+
+  const ch = d.changes;
+  if (ch) {
+    document.getElementById('f-changes').hidden = false;
+    const ct = document.getElementById('f-chg-tone');
+    ct.textContent = (ch.tone_shift || '').replace(/_/g, ' ');
+    ct.className = 'tone ' + ((ch.tone_shift || '').includes('negative') || (ch.tone_shift || '').includes('cautious') ? 'deteriorating' : (ch.tone_shift || '').includes('positive') ? 'improving' : 'stable');
+    document.getElementById('f-chg-mat').textContent = ch.materiality || '';
+    document.getElementById('f-chg-prev').textContent = ch.prev_filing_date ? 'vs ' + String(ch.prev_filing_date).slice(0, 10) : '';
+    document.getElementById('f-chg-summary').textContent = ch.change_summary || '';
+    const lst = (label, arr) => (arr && arr.length) ? `<p class="muted"><b>${label}:</b> ${arr.join(' · ')}</p>` : '';
+    document.getElementById('f-chg-new').innerHTML = lst('New risks', ch.new_risks);
+    document.getElementById('f-chg-removed').innerHTML = lst('Dropped', ch.removed_risks);
+    document.getElementById('f-chg-escal').innerHTML =
+      (ch.escalated_topics || []).map(x => `<span class="chip">${x}</span>`).join('');
   }
 
   const secs = (d.sections || []).filter(s => (s.char_len || 0) > 200);

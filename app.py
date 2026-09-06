@@ -354,10 +354,29 @@ def api_filing(accession):
         )
     except Exception:
         intel = []
+    try:
+        event = warehouse.query(
+            f"""SELECT event_type, materiality, event_summary, key_figures
+                FROM {T('gold_8k_events')} WHERE accession = ?""",
+            [accession],
+        )
+    except Exception:
+        event = []
+    try:
+        changes = warehouse.query(
+            f"""SELECT prev_filing_date, tone_shift, materiality, change_summary,
+                       new_risks, removed_risks, escalated_topics
+                FROM {T('gold_filing_language_changes')} WHERE accession = ?""",
+            [accession],
+        )
+    except Exception:
+        changes = []
     return jsonify(
         {
             "filing": filing[0] if filing else None,
             "intelligence": intel[0] if intel else None,
+            "event": event[0] if event else None,
+            "changes": changes[0] if changes else None,
             "sections": sections,
             "exhibits": exhibits,
             "facts": facts,

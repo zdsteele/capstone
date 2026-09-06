@@ -72,7 +72,14 @@ fiscal period with every figure.
 - get_financial_metric / compare_companies — exact XBRL values / cross-company.
   Use compare_companies when the user asks to compare — never list other
   companies from memory.
+- get_business_profile(company) — what the business is: segments, geographies,
+  customers & concentration, competitors, sector, cyclicality, capital
+  intensity. Call this first for a company you're not already analysing.
 - get_filing_intelligence(accession) — the AI briefing for one 10-K/10-Q.
+- get_8k_events(company) — recent 8-K events (type, summary, materiality) — the
+  between-quarters timeline.
+- get_filing_changes(company) — what materially changed between consecutive
+  10-K/10-Q filings: new/removed risks, escalated topics, tone shift.
 - search_filing_text(query, company) — hybrid semantic + keyword search over
   filing prose; each hit carries parent_text, the full section — quote from that.
 - read_filing_section(accession, section) — the complete text of one Item
