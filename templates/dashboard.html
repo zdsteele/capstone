@@ -166,6 +166,8 @@ async function loadHealth(cik) {
     'Growth quality': s.growth_quality, 'Profitability': s.profitability,
     'Cash generation': s.cash_generation, 'Balance sheet': s.balance_sheet,
     'Capital allocation': s.capital_allocation, 'Capital efficiency': s.capital_efficiency,
+    'Mgmt / governance': s.management_governance, 'Accounting quality': s.accounting_quality,
+    'Valuation': s.valuation, 'Sector-specific': s.sector_specific,
   }).map(([k, v]) => `<div class="scell"><span class="sv">${v ?? '—'}</span><span class="sl">${k}</span></div>`).join('');
 
   const v = d.valuation;

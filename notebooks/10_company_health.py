@@ -4,16 +4,18 @@
 # environment_version = "5"
 # ///
 # MAGIC %md
-# MAGIC # 10 · Company health score & investor report  (AI, grounded on the ratios)
+# MAGIC # 10 · Company health score & investor report  (AI, grounded on everything)
 # MAGIC
-# MAGIC For each company: feed the last ~8 periods of `gold_financial_ratios` +
-# MAGIC `gold_company_financials` + recent `gold_filing_intelligence` briefings to
-# MAGIC `ai_query`, and get back the Investor Health Score (0-100 per dimension) plus
-# MAGIC the structured investor report from `docs/ANALYST_SPEC.md` §20-22.
+# MAGIC For each company, feed `ai_query` the last ~8 periods of
+# MAGIC `gold_financial_ratios` (now the full §3-10 set incl. the FCF bridge,
+# MAGIC leverage, working capital, payout) + `gold_valuation` + `gold_governance`
+# MAGIC + `gold_insider_activity` + recent `gold_filing_intelligence` briefings,
+# MAGIC and get back the 11-dimension Investor Health Score plus the structured
+# MAGIC investor report from `docs/ANALYST_SPEC.md` §20-22.
 # MAGIC
-# MAGIC The LLM analyzes **numbers we computed** — it is told not to invent figures.
-# MAGIC Dimensions needing un-ingested data (governance, valuation, sector) are
-# MAGIC omitted, not faked. Lands `gold_company_health` (one row per cik).
+# MAGIC The LLM analyzes **numbers we computed** — told not to invent figures, and
+# MAGIC to return `null` for a dimension whose input block is absent (nothing
+# MAGIC faked). Lands `gold_company_health` (one row per cik).
 
 # COMMAND ----------
 
@@ -36,13 +38,26 @@ from pyspark.sql.types import ArrayType, IntegerType, StringType, StructField, S
 
 # DBTITLE 1,Build one grounded prompt per company (driver-side, 5 companies)
 RATIO_FIELDS = [
-    "fiscal_year", "fiscal_period", "revenue", "revenue_growth_yoy", "gross_margin",
-    "operating_margin", "net_margin", "net_income", "eps_diluted", "operating_cash_flow",
-    "fcf", "fcf_margin", "fcf_conversion", "cash_and_equivalents", "long_term_debt",
-    "net_debt", "debt_to_equity", "return_on_equity", "roic_approx", "capex_intensity",
-    "diluted_shares_approx",
-    "operating_margin_trend", "fcf_margin_trend", "roic_approx_trend", "net_debt_trend",
-    "diluted_shares_approx_trend", "revenue_trend",
+    "fiscal_year", "fiscal_period", "revenue", "revenue_growth_yoy",
+    "gross_margin", "operating_margin", "net_margin", "net_income", "eps_diluted",
+    "operating_cash_flow", "fcf", "fcf_margin", "fcf_conversion", "cfo_conversion",
+    "capex_intensity", "capex_to_da",
+    # FCF bridge (§5)
+    "bridge_da", "bridge_sbc", "wc_change_total",
+    # balance sheet (§6)
+    "cash_and_equivalents", "total_debt", "net_debt_full", "current_ratio",
+    "debt_to_ebitda", "net_debt_to_ebitda", "interest_coverage", "goodwill_pct_assets",
+    # capital allocation (§7) + dilution (§8)
+    "dividends_paid_abs", "buybacks_abs", "dividend_payout", "fcf_payout",
+    "buyback_pct_fcf", "sbc_pct_revenue", "sbc_vs_buybacks", "diluted_shares",
+    # returns (§9) + working capital (§10)
+    "return_on_equity", "return_on_assets", "effective_tax_rate", "roic",
+    "dso", "dio", "dpo", "ccc",
+    # trend flags
+    "revenue_trend", "operating_margin_trend", "fcf_margin_trend", "roic_trend",
+    "net_debt_full_trend", "diluted_shares_trend", "current_ratio_trend",
+    "net_debt_to_ebitda_trend", "interest_coverage_trend", "ccc_trend",
+    "fcf_payout_trend", "sbc_pct_revenue_trend",
 ]
 
 ratios = spark.table(T("gold_financial_ratios"))
@@ -66,6 +81,27 @@ except Exception:
     intel = {}
 
 
+def _side_table(name, cols):
+    """{cik: 'k=v | k=v'} from a gold table if it exists, else {}."""
+    try:
+        return {
+            r["cik"]: " | ".join(f"{c}={r[c]}" for c in cols if r[c] is not None)
+            for r in spark.table(T(name)).select("cik", *cols).collect()
+        }
+    except Exception:
+        return {}
+
+
+valn = _side_table("gold_valuation", ["market_cap", "pe", "ev_ebitda", "ev_revenue",
+                                      "price_to_fcf", "fcf_yield", "price_to_book",
+                                      "dividend_yield", "shareholder_yield"])
+govn = _side_table("gold_governance", ["incentivized_to_optimize", "pay_is_equity_heavy",
+                                       "say_on_pay_support_pct", "board_independent_pct",
+                                       "incentive_risk", "related_party_transactions"])
+insd = _side_table("gold_insider_activity", ["signal", "buy_value_180d", "sell_value_180d",
+                                             "net_value_180d", "n_buyers_180d", "n_sellers_180d"])
+
+
 def fmt_num(v):
     if v is None:
         return "n/a"
@@ -85,8 +121,13 @@ PROMPT = (
     "after. Every string value must be ONE line (no literal newline characters). "
     "Keys:\n"
     "- scores: object of integers 0-100: growth_quality, profitability, cash_generation, "
-    "balance_sheet, capital_allocation, capital_efficiency, financial_health\n"
-    "- overall_score: integer 0-100\n"
+    "balance_sheet, capital_allocation, capital_efficiency, management_governance, "
+    "accounting_quality, valuation, sector_specific, financial_health. Return null for "
+    "any dimension whose input block is absent below (no GOVERNANCE block -> "
+    "management_governance null; no VALUATION block -> valuation null; sector_specific "
+    "null unless the filings clearly support a sector KPI read).\n"
+    "- overall_score: integer 0-100 — the composite MUST NOT hide a flagged risk "
+    "(an 82 with a liquidity problem still shows the liquidity risk prominently)\n"
     '- overall_label: "Strong" | "Healthy" | "Mixed" | "Weak" | "Distressed"\n'
     '- direction: "Improving" | "Stable" | "Deteriorating"\n'
     "- what_changed: array of 3-5 strings (development + why it matters)\n"
@@ -107,7 +148,8 @@ PROMPT = (
 HEALTH_SCHEMA = StructType([
     StructField("scores", StructType([StructField(k, IntegerType()) for k in [
         "growth_quality", "profitability", "cash_generation", "balance_sheet",
-        "capital_allocation", "capital_efficiency", "financial_health"]])),
+        "capital_allocation", "capital_efficiency", "management_governance",
+        "accounting_quality", "valuation", "sector_specific", "financial_health"]])),
     StructField("overall_score", IntegerType()),
     StructField("overall_label", StringType()),
     StructField("direction", StringType()),
@@ -129,20 +171,34 @@ HEALTH_SCHEMA = StructType([
     StructField("key_metric_next_quarter", StringType()),
 ])
 
+from collections import defaultdict
+_by_cik = defaultdict(list)
+for x in rows:
+    _by_cik[x["cik"]].append(x)
+
+
+def _fmt(v):
+    return fmt_num(v) if isinstance(v, (int, float)) else v
+
+
 prompt_rows = []
 for co in companies:
     cik = co["cik"]
-    lines = []
-    for r in [x for x in rows if x["cik"] == cik]:
-        lines.append(" | ".join(f"{k}={fmt_num(r[k]) if isinstance(r[k], (int, float)) else r[k]}" for k in RATIO_FIELDS))
+    lines = [" | ".join(f"{k}={_fmt(r.get(k))}" for k in RATIO_FIELDS) for r in _by_cik.get(cik, [])]
     if not lines:
         continue
     body = (
         f"COMPANY: {co['ticker']} — {co['name']} ({co.get('sic_description') or 'n/a'})\n\n"
-        f"PER-PERIOD RATIOS (oldest first; margins are fractions, growth is fraction, "
-        f"*_trend is up/down/stable vs. same period prior year):\n" + "\n".join(lines) +
-        "\n\nRECENT AI FILING BRIEFINGS:\n" + (intel.get(cik, "(none)"))
+        f"PER-PERIOD RATIOS (oldest first; margins/growth are fractions; *_trend is "
+        f"up/down/stable vs. the same period a year earlier):\n" + "\n".join(lines)
     )
+    if cik in valn:
+        body += f"\n\nVALUATION (yfinance price + XBRL): {valn[cik]}"
+    if cik in govn:
+        body += f"\n\nGOVERNANCE (latest proxy): {govn[cik]}"
+    if cik in insd:
+        body += f"\n\nINSIDER ACTIVITY (180d, open market): {insd[cik]}"
+    body += "\n\nRECENT AI FILING BRIEFINGS:\n" + intel.get(cik, "(none)")
     prompt_rows.append((cik, co["ticker"], co["name"], PROMPT + body))
 
 pdf = spark.createDataFrame(prompt_rows, ["cik", "ticker", "name", "prompt"])
