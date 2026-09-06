@@ -11,8 +11,10 @@ The assistant runs the in-process LangGraph agent (``agent/graph.py``).
 """
 
 import logging
+import logging.handlers
 import os
 import re
+import time
 
 # Load .env for local dev BEFORE importing lib.* (they read os.environ at import).
 try:
@@ -26,10 +28,49 @@ from flask import Flask, jsonify, redirect, render_template, request, session, u
 
 from lib import lakebase, warehouse
 
-logging.basicConfig(level=logging.INFO)
+def _setup_logging():
+    """Console + rotating file (`logs/app.log`, next to this file). DEBUG when
+    FLASK_DEBUG is set. Attached to the root logger so werkzeug / agent / lib
+    all land in the same file for local debugging."""
+    level = logging.DEBUG if os.environ.get("FLASK_DEBUG") else logging.INFO
+    root = logging.getLogger()
+    root.setLevel(level)
+    fmt = logging.Formatter(
+        "%(asctime)s %(levelname)-7s %(name)s: %(message)s", "%H:%M:%S"
+    )
+    if not any(isinstance(h, logging.StreamHandler) for h in root.handlers):
+        sh = logging.StreamHandler()
+        sh.setFormatter(fmt)
+        root.addHandler(sh)
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "app.log")
+    if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers):
+        fh = logging.handlers.RotatingFileHandler(
+            log_path, maxBytes=2_000_000, backupCount=3, encoding="utf-8"
+        )
+        fh.setFormatter(fmt)
+        root.addHandler(fh)
+    return log_path
+
+
+_LOG_PATH = _setup_logging()
 logger = logging.getLogger("edgar-app")
+logger.info("logging to %s (level=%s)", _LOG_PATH, logging.getLevelName(logging.getLogger().level))
 
 app = Flask(__name__)
+
+
+@app.after_request
+def _log_request(resp):
+    dur = (time.time() - getattr(request, "_t0", time.time())) * 1000
+    logger.info("%s %s -> %s  %.0fms", request.method, request.full_path.rstrip("?"), resp.status_code, dur)
+    return resp
+
+
+@app.before_request
+def _mark_start():
+    request._t0 = time.time()
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32)
 
 VS_ENDPOINT = os.environ.get("VS_ENDPOINT", "")
@@ -443,7 +484,17 @@ def api_assistant_message():
         embedding_endpoint=EMBEDDING_ENDPOINT,
     )
     turn = history + [{"role": "user", "content": message}]
-    result = run_agent(turn, ctx)
+    logger.info("assistant conv=%s prompt=%r", conversation_id, message[:200])
+    try:
+        result = run_agent(turn, ctx)
+    except Exception:
+        logger.exception("run_agent failed conv=%s", conversation_id)
+        raise
+    logger.info(
+        "assistant conv=%s tools=%s confidence=%s reply=%r",
+        conversation_id, result.get("tool_calls"), result.get("confidence"),
+        (result.get("reply") or "")[:200],
+    )
 
     # log the final answer + its self-reported confidence (feeds analytics)
     import json as _json

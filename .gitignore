@@ -8,6 +8,7 @@ __pycache__/
 venv/
 env/
 *.log
+logs/
 mlflow.db
 mlruns/
 .DS_Store
