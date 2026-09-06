@@ -250,10 +250,15 @@ def build_tools(ctx: ToolContext) -> list:
     def get_financial_ratios(
         company: str, fiscal_year: int | None = None, fiscal_period: str | None = None
     ) -> str:
-        """Get derived ratios + trend flags for a company (margins, revenue growth,
-        FCF & FCF margin & conversion, net debt, debt/equity, ROE, ROIC (approx),
-        capex intensity, per-share figures) by period. `*_trend` is up/down/stable
-        vs. the same period a year earlier. Optionally pin fiscal_year / fiscal_period."""
+        """Derived ratios + trend flags per period, covering analyst-spec §3-10:
+        margins & growth; FCF, FCF margin/conversion and the FCF **bridge**
+        (net income + D&A + SBC ± working-capital changes − capex); balance sheet
+        (current ratio, total/net debt, debt & net-debt / EBITDA, interest
+        coverage, goodwill % assets); capital allocation (dividend payout, FCF
+        payout, buyback % of FCF, SBC vs buybacks); ROIC with an effective tax
+        rate; working capital (DSO/DIO/DPO/CCC); per-share figures. `*_trend` is
+        up/down/stable vs the same period a year earlier. Pin fiscal_year /
+        fiscal_period to focus."""
         with record_action(
             ctx, "get_financial_ratios", "retrieval",
             {"company": company, "fiscal_year": fiscal_year, "fiscal_period": fiscal_period},
@@ -263,16 +268,11 @@ def build_tools(ctx: ToolContext) -> list:
                 return f"Could not resolve company '{company}'."
             rows = _wq(
                 f"""
-                SELECT fiscal_year, fiscal_period, period_end, revenue, revenue_growth_yoy,
-                       gross_margin, operating_margin, net_margin, fcf, fcf_margin,
-                       fcf_conversion, net_debt, debt_to_equity, return_on_equity,
-                       roic_approx, capex_intensity, diluted_shares_approx,
-                       operating_margin_trend, fcf_margin_trend, roic_approx_trend,
-                       net_debt_trend, diluted_shares_approx_trend
+                SELECT * EXCEPT (cik, ticker, name)
                 FROM {T('gold_financial_ratios')}
                 WHERE cik = ? AND (? IS NULL OR fiscal_year = ?)
                   AND (? IS NULL OR fiscal_period = ?)
-                ORDER BY period_end DESC LIMIT 20
+                ORDER BY period_end DESC LIMIT 12
                 """,
                 [cik, fiscal_year, fiscal_year, fiscal_period, fiscal_period],
             )
@@ -291,12 +291,7 @@ def build_tools(ctx: ToolContext) -> list:
             if not cik:
                 return f"Could not resolve company '{company}'."
             rows = _wq(
-                f"""
-                SELECT ticker, name, price, price_date, market_cap, enterprise_value,
-                       net_debt, revenue_ttm, net_income_ttm, ebit_ttm, fcf_ttm,
-                       pe, ev_ebit, ev_revenue, price_to_fcf, fcf_yield, price_to_book, as_of
-                FROM {T('gold_valuation')} WHERE cik = ?
-                """,
+                f"SELECT * EXCEPT (cik) FROM {T('gold_valuation')} WHERE cik = ?",
                 [cik],
             )
             rec["result"] = rows

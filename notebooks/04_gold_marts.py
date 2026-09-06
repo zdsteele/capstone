@@ -26,6 +26,7 @@ from pyspark.sql import functions as F, Window
 
 # metric -> ordered candidate us-gaap concepts (index = priority, lower is better)
 CONCEPT_MAP = {
+    # --- income statement ---
     "revenue": ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet", "RevenueFromContractWithCustomerIncludingAssessedTax"],
     "cost_of_revenue": ["CostOfRevenue", "CostOfGoodsAndServicesSold"],
     "gross_profit": ["GrossProfit"],
@@ -33,23 +34,66 @@ CONCEPT_MAP = {
     "research_development": ["ResearchAndDevelopmentExpense"],
     "sga_expense": ["SellingGeneralAndAdministrativeExpense", "GeneralAndAdministrativeExpense"],
     "operating_income": ["OperatingIncomeLoss"],
+    "interest_expense": ["InterestExpense", "InterestExpenseNonoperating", "InterestAndDebtExpense", "InterestIncomeExpenseNet"],
+    "pretax_income": ["IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest", "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"],
+    "income_tax_expense": ["IncomeTaxExpenseBenefit"],
     "net_income": ["NetIncomeLoss", "ProfitLoss"],
     "eps_basic": ["EarningsPerShareBasic"],
     "eps_diluted": ["EarningsPerShareDiluted"],
+    "shares_basic": ["WeightedAverageNumberOfSharesOutstandingBasic"],
+    "shares_diluted": ["WeightedAverageNumberOfDilutedSharesOutstanding"],
+    # --- balance sheet (instant) ---
     "total_assets": ["Assets"],
     "total_liabilities": ["Liabilities"],
+    "current_assets": ["AssetsCurrent"],
+    "current_liabilities": ["LiabilitiesCurrent"],
     "stockholders_equity": ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"],
     "cash_and_equivalents": ["CashAndCashEquivalentsAtCarryingValue"],
+    "marketable_securities": ["MarketableSecuritiesCurrent", "ShortTermInvestments", "AvailableForSaleSecuritiesCurrent"],
+    "accounts_receivable": ["AccountsReceivableNetCurrent", "ReceivablesNetCurrent"],
+    "inventory": ["InventoryNet"],
+    "accounts_payable": ["AccountsPayableCurrent", "AccountsPayableAndAccruedLiabilitiesCurrent"],
+    "short_term_debt": ["LongTermDebtCurrent", "DebtCurrent", "ShortTermBorrowings"],
     "long_term_debt": ["LongTermDebtNoncurrent", "LongTermDebt"],
+    "lease_liabilities": ["OperatingLeaseLiabilityNoncurrent", "OperatingLeaseLiability", "FinanceLeaseLiabilityNoncurrent"],
+    "deferred_revenue": ["ContractWithCustomerLiabilityCurrent", "DeferredRevenueCurrent", "ContractWithCustomerLiability"],
+    "goodwill": ["Goodwill"],
+    "intangible_assets": ["IntangibleAssetsNetExcludingGoodwill", "FiniteLivedIntangibleAssetsNet"],
+    # --- cash-flow statement (duration) ---
     "operating_cash_flow": ["NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"],
     "investing_cash_flow": ["NetCashProvidedByUsedInInvestingActivities"],
     "financing_cash_flow": ["NetCashProvidedByUsedInFinancingActivities"],
-    "capital_expenditures": ["PaymentsToAcquirePropertyPlantAndEquipment"],
+    "capital_expenditures": ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets"],
+    "depreciation_amortization": ["DepreciationDepletionAndAmortization", "DepreciationAmortizationAndAccretionNet", "DepreciationAndAmortization", "Depreciation"],
+    "stock_based_compensation": ["ShareBasedCompensation"],
+    "dividends_paid": ["PaymentsOfDividendsCommonStock", "PaymentsOfDividends"],
+    "stock_repurchased": ["PaymentsForRepurchaseOfCommonStock"],
+    "acquisitions": ["PaymentsToAcquireBusinessesNetOfCashAcquired", "PaymentsToAcquireBusinessesAndInterestInAffiliates"],
+    "debt_issued": ["ProceedsFromIssuanceOfLongTermDebt", "ProceedsFromIssuanceOfDebt"],
+    "debt_repaid": ["RepaymentsOfLongTermDebt", "RepaymentsOfDebt"],
+    "chg_accounts_receivable": ["IncreaseDecreaseInAccountsReceivable"],
+    "chg_inventory": ["IncreaseDecreaseInInventories"],
+    "chg_accounts_payable": ["IncreaseDecreaseInAccountsPayable", "IncreaseDecreaseInAccountsPayableTrade"],
+    "chg_deferred_revenue": ["IncreaseDecreaseInContractWithCustomerLiability", "IncreaseDecreaseInDeferredRevenue"],
 }
+_INCOME = ["revenue", "cost_of_revenue", "gross_profit", "operating_expenses",
+           "research_development", "sga_expense", "operating_income", "interest_expense",
+           "pretax_income", "income_tax_expense", "net_income", "eps_basic", "eps_diluted",
+           "shares_basic", "shares_diluted"]
+_BALANCE = ["total_assets", "total_liabilities", "current_assets", "current_liabilities",
+            "stockholders_equity", "cash_and_equivalents", "marketable_securities",
+            "accounts_receivable", "inventory", "accounts_payable", "short_term_debt",
+            "long_term_debt", "lease_liabilities", "deferred_revenue", "goodwill",
+            "intangible_assets"]
+_CASHFLOW = ["operating_cash_flow", "investing_cash_flow", "financing_cash_flow",
+             "capital_expenditures", "depreciation_amortization", "stock_based_compensation",
+             "dividends_paid", "stock_repurchased", "acquisitions", "debt_issued",
+             "debt_repaid", "chg_accounts_receivable", "chg_inventory",
+             "chg_accounts_payable", "chg_deferred_revenue"]
 STATEMENT = {
-    **{m: "income" for m in ["revenue", "cost_of_revenue", "gross_profit", "operating_expenses", "research_development", "sga_expense", "operating_income", "net_income", "eps_basic", "eps_diluted"]},
-    **{m: "balance" for m in ["total_assets", "total_liabilities", "stockholders_equity", "cash_and_equivalents", "long_term_debt"]},
-    **{m: "cash_flow" for m in ["operating_cash_flow", "investing_cash_flow", "financing_cash_flow", "capital_expenditures"]},
+    **{m: "income" for m in _INCOME},
+    **{m: "balance" for m in _BALANCE},
+    **{m: "cash_flow" for m in _CASHFLOW},
 }
 
 map_rows = [

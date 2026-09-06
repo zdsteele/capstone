@@ -67,7 +67,10 @@ fy = (
             F.col("revenue").alias("rev_fy"),
             F.col("net_income").alias("ni_fy"),
             F.col("operating_income").alias("ebit_fy"),
-            F.col("fcf").alias("fcf_fy"))
+            F.col("ebitda").alias("ebitda_fy"),
+            F.col("fcf").alias("fcf_fy"),
+            F.col("dividends_paid_abs").alias("div_fy"),
+            F.col("buybacks_abs").alias("buyback_fy"))
 )
 
 # fallback: annualise the last 4 quarters
@@ -100,6 +103,7 @@ base = (
     .withColumn("revenue_ttm", F.coalesce("rev_fy", "rev_q"))
     .withColumn("net_income_ttm", F.coalesce("ni_fy", "ni_q"))
     .withColumn("ebit_ttm", F.coalesce("ebit_fy", "ebit_q"))
+    .withColumn("ebitda_ttm", F.col("ebitda_fy"))
     .withColumn("fcf_ttm", F.coalesce("fcf_fy", "fcf_q"))
     .withColumn("market_cap", F.col("price") * F.col("diluted_shares_approx"))
     .withColumn("enterprise_value", F.col("market_cap") + F.coalesce("net_debt", F.lit(0.0)))
@@ -114,6 +118,7 @@ def _ratio(num, den):
 valuation = (
     base.withColumn("pe", _ratio("market_cap", "net_income_ttm"))
     .withColumn("ev_ebit", _ratio("enterprise_value", "ebit_ttm"))
+    .withColumn("ev_ebitda", _ratio("enterprise_value", "ebitda_ttm"))
     .withColumn("ev_revenue", _ratio("enterprise_value", "revenue_ttm"))
     .withColumn("price_to_fcf", _ratio("market_cap", "fcf_ttm"))
     .withColumn(
@@ -121,11 +126,25 @@ valuation = (
         F.when(F.col("market_cap") > 0, F.col("fcf_ttm") / F.col("market_cap")).otherwise(None),
     )
     .withColumn("price_to_book", _ratio("market_cap", "stockholders_equity"))
+    .withColumn(
+        "dividend_yield",
+        F.when(F.col("market_cap") > 0, F.col("div_fy") / F.col("market_cap")).otherwise(None),
+    )
+    .withColumn(
+        "buyback_yield",
+        F.when(F.col("market_cap") > 0, F.col("buyback_fy") / F.col("market_cap")).otherwise(None),
+    )
+    .withColumn(
+        "shareholder_yield",
+        F.when(F.col("market_cap") > 0,
+               (F.coalesce("div_fy", F.lit(0.0)) + F.coalesce("buyback_fy", F.lit(0.0))) / F.col("market_cap")),
+    )
     .select(
         "cik", "ticker", "name", "as_of", "price", "price_date",
         "diluted_shares_approx", "market_cap", "net_debt", "enterprise_value",
-        "revenue_ttm", "net_income_ttm", "ebit_ttm", "fcf_ttm",
-        "pe", "ev_ebit", "ev_revenue", "price_to_fcf", "fcf_yield", "price_to_book",
+        "revenue_ttm", "net_income_ttm", "ebit_ttm", "ebitda_ttm", "fcf_ttm",
+        "pe", "ev_ebit", "ev_ebitda", "ev_revenue", "price_to_fcf", "fcf_yield",
+        "price_to_book", "dividend_yield", "buyback_yield", "shareholder_yield",
         F.current_timestamp().alias("generated_at"),
     )
 )

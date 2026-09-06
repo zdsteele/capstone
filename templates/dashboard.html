@@ -175,11 +175,13 @@ async function loadHealth(cik) {
       <div class="scell"><span class="sv">${fmtUSD(v.market_cap)}</span><span class="sl">Market cap</span></div>
       <div class="scell"><span class="sv">${fmtUSD(v.enterprise_value)}</span><span class="sl">Enterprise value</span></div>
       <div class="scell"><span class="sv">${rx(v.pe)}</span><span class="sl">P / E</span></div>
-      <div class="scell"><span class="sv">${rx(v.ev_ebit)}</span><span class="sl">EV / EBIT</span></div>
+      <div class="scell"><span class="sv">${rx(v.ev_ebitda)}</span><span class="sl">EV / EBITDA</span></div>
       <div class="scell"><span class="sv">${rx(v.ev_revenue)}</span><span class="sl">EV / Revenue</span></div>
       <div class="scell"><span class="sv">${rx(v.price_to_fcf)}</span><span class="sl">Price / FCF</span></div>
       <div class="scell"><span class="sv">${v.fcf_yield == null ? '—' : (v.fcf_yield * 100).toFixed(1) + '%'}</span><span class="sl">FCF yield</span></div>
       <div class="scell"><span class="sv">${rx(v.price_to_book)}</span><span class="sl">Price / Book</span></div>
+      <div class="scell"><span class="sv">${v.dividend_yield == null ? '—' : (v.dividend_yield * 100).toFixed(2) + '%'}</span><span class="sl">Dividend yield</span></div>
+      <div class="scell"><span class="sv">${v.shareholder_yield == null ? '—' : (v.shareholder_yield * 100).toFixed(1) + '%'}</span><span class="sl">Shareholder yield</span></div>
     </div>
     <p class="muted" style="font-size:11px">Price ${fmtUSD(v.price)} on ${(v.price_date||'').slice(0,10)} (yfinance) · fundamentals through ${(v.as_of||'').slice(0,10)}. A low multiple is not automatically "cheap".</p>` : '';
 
