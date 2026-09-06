@@ -410,17 +410,36 @@ def api_health(cik):
         val = warehouse.query(
             f"""
             SELECT price, price_date, market_cap, enterprise_value, pe, ev_ebit,
-                   ev_revenue, price_to_fcf, fcf_yield, price_to_book, as_of
+                   ev_ebitda, ev_revenue, price_to_fcf, fcf_yield, price_to_book,
+                   dividend_yield, shareholder_yield, as_of
             FROM {T('gold_valuation')} WHERE cik = ?
             """,
             [cik],
         )
     except Exception:
         val = []
+    try:
+        gov = warehouse.query(
+            f"SELECT * EXCEPT (cik, model, generated_at) FROM {T('gold_governance')} WHERE cik = ?",
+            [cik],
+        )
+    except Exception:
+        gov = []
+    try:
+        insider = warehouse.query(
+            f"""SELECT buy_value_180d, sell_value_180d, net_value_180d, n_buyers_180d,
+                       n_sellers_180d, largest_buy_180d, latest_txn_date, signal
+                FROM {T('gold_insider_activity')} WHERE cik = ?""",
+            [cik],
+        )
+    except Exception:
+        insider = []
     return jsonify({
         "health": h[0] if h else None,
         "ratios": ratios,
         "valuation": val[0] if val else None,
+        "governance": gov[0] if gov else None,
+        "insider": insider[0] if insider else None,
     })
 
 

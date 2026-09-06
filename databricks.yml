@@ -182,6 +182,50 @@ resources:
           timeout_seconds: 86400
 
     # -----------------------------------------------------------------------
+    # Ownership + governance — Forms 3/4/5 and DEF 14A. Separate from the daily
+    # pipeline (different form types, heavier fetch, changes less often). Weekly.
+    # -----------------------------------------------------------------------
+    ingest_ownership_governance:
+      name: "EDGAR - ownership + governance (Forms 3/4/5, DEF 14A)"
+      description: >
+        13_insider_activity.py + 14_governance.py — insider transactions and
+        proxy comp/board extraction. Weekly, Sundays 05:00 America/New_York.
+      tags:
+        project: edgar_capstone
+        owner: zdsteele
+      schedule:
+        quartz_cron_expression: "0 0 5 ? * SUN"
+        timezone_id: "America/New_York"
+      max_concurrent_runs: 1
+      timeout_seconds: 172800
+      email_notifications:
+        on_failure:
+          - "${var.notify_email}"
+      tasks:
+        - task_key: insider_activity
+          notebook_task:
+            notebook_path: ./notebooks/13_insider_activity.py
+            base_parameters:
+              catalog: "${var.catalog}"
+              schema: "${var.schema}"
+              ciks_config: "${var.ciks_config}"
+              mode: incremental
+          timeout_seconds: 86400
+          max_retries: 2
+          min_retry_interval_millis: 120000
+        - task_key: governance
+          notebook_task:
+            notebook_path: ./notebooks/14_governance.py
+            base_parameters:
+              catalog: "${var.catalog}"
+              schema: "${var.schema}"
+              ciks_config: "${var.ciks_config}"
+              mode: incremental
+          timeout_seconds: 86400
+          max_retries: 2
+          min_retry_interval_millis: 120000
+
+    # -----------------------------------------------------------------------
     # Reverse-CDC analytics — event-driven, NOT scheduled. Fires when the app /
     # agent writes land in the lb_*_history tables (Lakebase Change Data Feed).
     # -----------------------------------------------------------------------

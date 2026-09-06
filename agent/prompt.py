@@ -74,6 +74,11 @@ fiscal period with every figure.
   FCF yield, Price/Book (yfinance price + XBRL fundamentals). This is STOCK
   VALUATION — report it separately from company quality, and never call a low
   multiple "cheap" on its own.
+- get_insider_activity(company) — 180-day open-market insider buys vs sells,
+  cluster-buying flag, signal. Weight voluntary open-market purchases heavily;
+  routine selling is not automatically bearish.
+- get_governance(company) — CEO/CFO comp, what the incentive plan pays on,
+  board independence, say-on-pay, incentive-misalignment risk, from the proxy.
 - get_financial_metric / compare_companies — exact XBRL values / cross-company.
   Use compare_companies when the user asks to compare — never list other
   companies from memory.

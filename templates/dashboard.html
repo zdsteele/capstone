@@ -37,6 +37,7 @@
     <div id="h-score"></div>
     <div id="h-scores" class="scoregrid"></div>
     <div id="h-valuation"></div>
+    <div id="h-govins"></div>
     <div class="tbl" id="h-trends-wrap"><table id="h-trends" class="grid"></table></div>
     <div id="h-report"></div>
     <p class="muted" id="h-note"></p>
@@ -184,6 +185,33 @@ async function loadHealth(cik) {
       <div class="scell"><span class="sv">${v.shareholder_yield == null ? '—' : (v.shareholder_yield * 100).toFixed(1) + '%'}</span><span class="sl">Shareholder yield</span></div>
     </div>
     <p class="muted" style="font-size:11px">Price ${fmtUSD(v.price)} on ${(v.price_date||'').slice(0,10)} (yfinance) · fundamentals through ${(v.as_of||'').slice(0,10)}. A low multiple is not automatically "cheap".</p>` : '';
+
+  const g = d.governance, ins = d.insider;
+  let gi = '';
+  if (g) {
+    gi += `<h3>Management &amp; governance <span class="muted" style="text-transform:none;letter-spacing:0">— from the latest proxy</span></h3>
+      <table class="kv">
+        <tr><th>CEO</th><td>${escapeHtml(g.ceo_name || '—')} ${g.ceo_total_comp_usd ? '· ' + fmtUSD(g.ceo_total_comp_usd) : ''}</td></tr>
+        <tr><th>Incentive plan pays on</th><td>${(g.performance_metrics || []).join(', ') || '—'}</td></tr>
+        <tr><th>Incentivized to optimize</th><td>${escapeHtml(g.incentivized_to_optimize || '—')}</td></tr>
+        <tr><th>Board independence</th><td>${g.board_independent_pct != null ? g.board_independent_pct + '%' : '—'} ${g.board_size ? '(' + g.board_size + ' seats)' : ''}</td></tr>
+        <tr><th>Say-on-pay support</th><td>${g.say_on_pay_support_pct != null ? g.say_on_pay_support_pct + '%' : '—'}</td></tr>
+      </table>
+      ${g.incentive_risk && g.incentive_risk.toLowerCase() !== 'none noted' ? `<p class="muted"><b>Incentive risk:</b> ${escapeHtml(g.incentive_risk)}</p>` : ''}`;
+  }
+  if (ins) {
+    const sig = (ins.signal || '');
+    const cls = sig.includes('buying') ? 'pos' : sig.includes('selling') ? 'neg' : 'muted';
+    gi += `<h3>Insider activity <span class="muted" style="text-transform:none;letter-spacing:0">— last 180 days, open market</span></h3>
+      <p><span class="${cls}"><b>${escapeHtml(sig)}</b></span></p>
+      <table class="kv">
+        <tr><th>Bought</th><td>${fmtUSD(ins.buy_value_180d)} · ${ins.n_buyers_180d || 0} insider(s)</td></tr>
+        <tr><th>Sold</th><td>${fmtUSD(ins.sell_value_180d)} · ${ins.n_sellers_180d || 0} insider(s)</td></tr>
+        <tr><th>Net</th><td>${fmtUSD(ins.net_value_180d)}</td></tr>
+        <tr><th>Largest buy</th><td>${ins.largest_buy_180d ? fmtUSD(ins.largest_buy_180d) : '—'}</td></tr>
+      </table>`;
+  }
+  document.getElementById('h-govins').innerHTML = gi;
 
   const rr = d.ratios || [];
   document.getElementById('h-trends').innerHTML =

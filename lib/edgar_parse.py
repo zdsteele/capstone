@@ -161,6 +161,91 @@ def _html_to_text(html: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# 2c. Form 3 / 4 / 5 ownership XML -> insider transaction rows
+# ---------------------------------------------------------------------------
+
+# SEC transactionCode -> (label, is_open_market)
+_TXN_CODES = {
+    "P": ("open-market purchase", True),
+    "S": ("open-market sale", True),
+    "A": ("grant/award", False),
+    "M": ("option exercise", False),
+    "F": ("tax withholding", False),
+    "G": ("gift", False),
+    "C": ("conversion", False),
+    "X": ("option exercise", False),
+    "D": ("disposition to issuer", False),
+}
+
+
+def _xt(node, path: str) -> str | None:
+    """Text at `path` (supports '/value' children the ownership schema uses)."""
+    el = node.find(path) if node is not None else None
+    if el is None:
+        return None
+    return (el.text or "").strip() or None
+
+
+def parse_form4(xml: str) -> dict | None:
+    """Parse a Form 3/4/5 `ownershipDocument` into
+    ``{issuer_cik, issuer_ticker, owner_name, owner_cik, is_director, is_officer,
+    officer_title, is_ten_pct_owner, transactions: [...]}``. Each transaction:
+    ``{date, code, code_label, open_market, acquired_disposed, shares, price,
+    value, shares_owned_after, security}``. Returns ``None`` if it isn't parseable
+    ownership XML. Stdlib ElementTree only."""
+    import xml.etree.ElementTree as ET
+
+    try:
+        # strip a stray leading XML declaration / SGML wrapper if present
+        start = xml.find("<ownershipDocument")
+        root = ET.fromstring(xml[start:] if start >= 0 else xml)
+    except Exception:
+        return None
+    if root.tag != "ownershipDocument":
+        return None
+
+    rel = root.find("reportingOwner/reportingOwnerRelationship")
+    out = {
+        "issuer_cik": _xt(root, "issuer/issuerCik"),
+        "issuer_ticker": _xt(root, "issuer/issuerTradingSymbol"),
+        "owner_name": _xt(root, "reportingOwner/reportingOwnerId/rptOwnerName"),
+        "owner_cik": _xt(root, "reportingOwner/reportingOwnerId/rptOwnerCik"),
+        "is_director": _xt(rel, "isDirector") in ("1", "true"),
+        "is_officer": _xt(rel, "isOfficer") in ("1", "true"),
+        "is_ten_pct_owner": _xt(rel, "isTenPercentOwner") in ("1", "true"),
+        "officer_title": _xt(rel, "officerTitle"),
+        "transactions": [],
+    }
+    for tbl in ("nonDerivativeTable", "derivativeTable"):
+        table = root.find(tbl)
+        if table is None:
+            continue
+        for txn in list(table):
+            if not txn.tag.endswith("Transaction"):
+                continue
+            code = _xt(txn, "transactionCoding/transactionCode")
+            label, open_mkt = _TXN_CODES.get(code or "", ("other", False))
+            shares = _to_float(_xt(txn, "transactionAmounts/transactionShares/value"))
+            price = _to_float(_xt(txn, "transactionAmounts/transactionPricePerShare/value"))
+            out["transactions"].append({
+                "date": _xt(txn, "transactionDate/value"),
+                "code": code,
+                "code_label": label,
+                "open_market": open_mkt,
+                "acquired_disposed": _xt(
+                    txn, "transactionAmounts/transactionAcquiredDisposedCode/value"),
+                "shares": shares,
+                "price": price,
+                "value": (shares * price) if (shares is not None and price is not None) else None,
+                "shares_owned_after": _to_float(
+                    _xt(txn, "postTransactionAmounts/sharesOwnedFollowingTransaction/value")),
+                "security": _xt(txn, "securityTitle/value"),
+                "derivative": tbl == "derivativeTable",
+            })
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 2b. Full-submission .txt -> per-document metadata (exhibits etc.)
 # ---------------------------------------------------------------------------
 

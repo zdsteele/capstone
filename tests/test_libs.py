@@ -81,6 +81,39 @@ def test_parse_filing_html_dedups_page_headers_and_8k_items():
     assert "Para two" in item1["text"] and "Para three" in item1["text"]
 
 
+def test_parse_form4():
+    xml = """<?xml version="1.0"?>
+    <ownershipDocument>
+      <issuer><issuerCik>0000320193</issuerCik><issuerTradingSymbol>AAPL</issuerTradingSymbol></issuer>
+      <reportingOwner>
+        <reportingOwnerId><rptOwnerCik>0001214128</rptOwnerCik><rptOwnerName>COOK TIMOTHY D</rptOwnerName></reportingOwnerId>
+        <reportingOwnerRelationship><isDirector>0</isDirector><isOfficer>1</isOfficer><officerTitle>CEO</officerTitle></reportingOwnerRelationship>
+      </reportingOwner>
+      <nonDerivativeTable>
+        <nonDerivativeTransaction>
+          <securityTitle><value>Common Stock</value></securityTitle>
+          <transactionDate><value>2026-04-01</value></transactionDate>
+          <transactionCoding><transactionCode>S</transactionCode></transactionCoding>
+          <transactionAmounts>
+            <transactionShares><value>511000</value></transactionShares>
+            <transactionPricePerShare><value>170.5</value></transactionPricePerShare>
+            <transactionAcquiredDisposedCode><value>D</value></transactionAcquiredDisposedCode>
+          </transactionAmounts>
+          <postTransactionAmounts><sharesOwnedFollowingTransaction><value>3280000</value></sharesOwnedFollowingTransaction></postTransactionAmounts>
+        </nonDerivativeTransaction>
+      </nonDerivativeTable>
+    </ownershipDocument>"""
+    d = ep.parse_form4(xml)
+    assert d["issuer_ticker"] == "AAPL"
+    assert d["owner_name"] == "COOK TIMOTHY D"
+    assert d["is_officer"] is True and d["officer_title"] == "CEO"
+    t = d["transactions"][0]
+    assert t["code"] == "S" and t["open_market"] is True
+    assert t["shares"] == 511000.0 and abs(t["value"] - 511000 * 170.5) < 1
+    assert t["shares_owned_after"] == 3280000.0
+    assert ep.parse_form4("<html>not ownership xml</html>") is None
+
+
 def test_parse_submission_documents():
     txt = (
         "<DOCUMENT>\n<TYPE>10-Q\n<SEQUENCE>1\n<FILENAME>a.htm\n<DESCRIPTION>FORM 10-Q\n</DOCUMENT>\n"

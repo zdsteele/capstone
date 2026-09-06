@@ -404,6 +404,52 @@ def build_tools(ctx: ToolContext) -> list:
             return _rows_or_msg(rows, f"No ratios for {company} (run notebook 09).")
 
     @tool
+    def get_insider_activity(company: str) -> str:
+        """Insider trading over the last 180 days (analyst spec §11): open-market
+        buy $ vs sell $, distinct insiders buying vs selling, cluster-buying flag,
+        largest open-market purchase, and a plain-English signal. Weight voluntary
+        open-market *purchases* with personal capital heavily; don't read routine
+        selling as automatically bearish."""
+        with record_action(ctx, "get_insider_activity", "retrieval", {"company": company}) as rec:
+            cik = _resolve_cik(company)
+            if not cik:
+                return f"Could not resolve company '{company}'."
+            rows = _wq(
+                f"SELECT * EXCEPT (cik, generated_at) FROM {T('gold_insider_activity')} WHERE cik = ?",
+                [cik],
+            )
+            if not rows:
+                txns = _wq(
+                    f"""SELECT txn_date, owner_name, officer_title, code_label, shares, price, value
+                        FROM {T('silver_insider_transactions')}
+                        WHERE cik = ? AND open_market ORDER BY txn_date DESC LIMIT 20""",
+                    [cik],
+                )
+                rec["result"] = txns
+                return _rows_or_msg(txns, f"No insider filings for {company} (run notebook 13).")
+            rec["result"] = rows
+            return _rows_or_msg(rows, f"No insider activity for {company}.")
+
+    @tool
+    def get_governance(company: str) -> str:
+        """Executive compensation & board governance from the latest proxy
+        (analyst spec §13): CEO/CFO total comp, whether pay is equity-heavy, the
+        performance metrics the incentive plan pays on, what management is thereby
+        incentivized to optimize, say-on-pay support, board size & independence,
+        ownership guidelines, related-party transactions, and any
+        incentive-misalignment risk."""
+        with record_action(ctx, "get_governance", "retrieval", {"company": company}) as rec:
+            cik = _resolve_cik(company)
+            if not cik:
+                return f"Could not resolve company '{company}'."
+            rows = _wq(
+                f"SELECT * EXCEPT (cik, model) FROM {T('gold_governance')} WHERE cik = ?",
+                [cik],
+            )
+            rec["result"] = rows
+            return _rows_or_msg(rows, f"No governance data for {company} (run notebook 14).")
+
+    @tool
     def get_valuation(company: str) -> str:
         """Get market-based valuation multiples for a company: price, market cap,
         enterprise value, P/E, EV/EBIT, EV/Revenue, Price/FCF, FCF yield,
@@ -705,8 +751,8 @@ def build_tools(ctx: ToolContext) -> list:
     return [
         search_company, search_filings, get_filing, get_filing_intelligence,
         screen_companies, get_business_profile, get_8k_events, get_filing_changes,
-        get_financial_ratios, get_valuation, get_company_health,
-        get_financial_metric, compare_companies,
+        get_financial_ratios, get_valuation, get_insider_activity, get_governance,
+        get_company_health, get_financial_metric, compare_companies,
         search_filing_text, read_filing_section, get_saved_research,
         save_filing, save_company_to_watchlist, create_research_note,
         update_research_note, remove_from_watchlist,

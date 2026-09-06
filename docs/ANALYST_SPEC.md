@@ -42,9 +42,9 @@ Legend: ✅ built · ◑ partial (built on the data we ingest; approximations no
 | 8 | Share count & dilution | ✅ | Real `diluted_shares` / `basic_shares` from `WeightedAverageNumberOf…` XBRL concepts (not the eps approx); `diluted_shares_trend`; `sbc_pct_revenue`, `sbc_vs_buybacks` (SBC ÷ buyback $); per-share on the real count. |
 | 9 | Return on capital | ✅ | `effective_tax_rate` from `income_tax_expense ÷ pretax_income` (clamped 0-50%, fallback 21%), `nopat`, `roic` = NOPAT ÷ invested capital, annualized for quarters, `roic_trend`. `roic_approx` kept for continuity. Cost-of-capital comparison still omitted (no WACC input). |
 | 10 | Working capital / CCC | ✅ | `gold_financial_ratios`: `dso`, `dio`, `dpo`, `ccc` from AR / inventory / AP balances vs revenue & COGS; `ccc_trend`. |
-| 11 | Insider activity (3/4/5, 144) | ⏳ | Forms not ingested. |
+| 11 | Insider activity (3/4/5) | ✅ | nb 13 (standalone): fetches Forms 3/4/5, parses the ownership XML (`lib.edgar_parse.parse_form4`) → `silver_insider_transactions` (insider, role, date, code P/S/A/M/F/G, shares, price, value, holdings after) → `gold_insider_activity` (180-day open-market buy $ vs sell $, distinct buyers/sellers, cluster-buying flag, signal). Agent `get_insider_activity`. Form 144 not ingested. |
 | 12 | Institutional ownership (13D/G/F) | ⏳ | Forms not ingested. |
-| 13 | Management & governance (DEF 14A) | ⏳ | Proxy not ingested → comp / incentive / board analysis out of scope for the pilot. |
+| 13 | Management & governance (DEF 14A) | ✅ | nb 14 (standalone): fetches the latest proxy, `ai_query` over the comp-discussion section → `gold_governance` (CEO/CFO comp, equity-heavy?, performance metrics the plan pays on, what mgmt is incentivized to optimize, say-on-pay support, board size & independence, ownership guidelines, related-party transactions, incentive-misalignment risk). Agent `get_governance`; Dashboard health tab. |
 | 14 | Management credibility | ⏳ | Needs a guidance-extraction history (guidance vs actual over time). Not built. |
 | 15 | Accounting quality / forensic | ◑ | `gold_filing_intelligence.risk_themes` + `notable_items` surface impairments, restructuring, "one-time" repeats, restatement / material-weakness language from Items 1A/7/7A. No quantitative accrual/reserve ratio screen. Findings are described, not yet graded Normal/Watch/Elevated/Serious. |
 | 16 | Filing-language changes | ✅ | `gold_filing_language_changes` (nb 12): every 10-K/10-Q vs the company's previous same-form filing — `change_summary`, `new_risks[]`, `removed_risks[]`, `escalated_topics[]` (demand/pricing/liquidity/litigation/AI/going-concern…), `tone_shift`, `materiality`. Boilerplate ignored. Agent `get_filing_changes` + a card on the Filing Explorer. |
@@ -56,8 +56,12 @@ Legend: ✅ built · ◑ partial (built on the data we ingest; approximations no
 | 22 | Final normal-investor summary | ✅ | `bottom_line` (plain-language paragraph) + `primary_strength` / `primary_risk` / `key_metric_next_quarter` + `financial_health` + `direction`. Prompt forbids a Buy/Sell call or price target from the health score. |
 | 23 | Data-integrity rules | ✅ | Discipline section below is enforced in `agent/prompt.py` (fact vs calc vs management vs interpretation; "Not available from the reviewed filings" instead of fabrication; GAAP primary). Every ratio row in `gold_financial_ratios` carries `cik` / `accession` / `fiscal_year` / `fiscal_period` / `period_end` provenance. |
 
-**Summary:** 16 sections fully built (1-10, 16, 19-23), 2 partial (15 accounting
-grading, 18 forward/peer valuation), 5 needing filing types beyond 10-K/10-Q/8-K
+**Summary:** 18 sections fully built (1-11, 13, 16, 19-23), 2 partial (15
+accounting grading, 18 forward/peer valuation), 3 remaining: §12 institutional
+ownership (13F — separate ingestion axis), §14 credibility (guidance history),
+§17 sector KPIs.
+
+_(legacy note, superseded:)_ needing filing types beyond 10-K/10-Q/8-K
 (5, 7, 10, 11, 12, 13, 14, 17) or live market data (18). The full-spec text
 is preserved verbatim below so the target never drifts.
 
