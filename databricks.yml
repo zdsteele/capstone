@@ -1,6 +1,16 @@
 bundle:
   name: edgar-intelligence-platform
 
+# Pin the workspace so the CLI auto-selects a matching ~/.databrickscfg profile
+# by host (no -p / env vars needed). Add a profile for this host, e.g.:
+#   [edgar]
+#   host = https://dbc-7b106152-caf3.cloud.databricks.com
+#   auth_type = oauth-m2m
+#   client_id = ...
+#   client_secret = ...
+workspace:
+  host: https://dbc-7b106152-caf3.cloud.databricks.com
+
 variables:
   catalog:
     default: bootcamp_students
