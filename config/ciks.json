@@ -1,6 +1,6 @@
 {
-  "_comment": "Pilot scope for the EDGAR Intelligence Platform. Scale this list to >=100 CIKs for the graded run so silver_financial_facts clears 1M rows. CIK is the 10-digit zero-padded form used by data.sec.gov.",
-  "forms": ["10-K", "10-Q", "8-K"],
+  "_comment": "PILOT scope (fast local/dev runs). The scaled run uses config/ciks_full.json (~470 S&P 500, from config/build_universe.py) — see docs/SCALING.md. CIK is the 10-digit zero-padded form used by data.sec.gov.",
+  "forms": ["10-K", "10-Q", "8-K", "20-F", "40-F", "6-K"],
   "companies": [
     { "ticker": "AAPL",  "cik": "0000320193", "name": "Apple Inc." },
     { "ticker": "MSFT",  "cik": "0000789019", "name": "Microsoft Corporation" },

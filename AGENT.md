@@ -20,7 +20,9 @@ Turns SEC EDGAR into a searchable financial-data platform:
 ## Repository layout
 
 ```
-config/ciks.json          pilot company list (scale here for the graded run)
+config/ciks.json          pilot company list (6 — fast dev runs)
+config/ciks_full.json     scaled universe (~470 S&P 500) — `python config/build_universe.py`
+config/build_universe.py  resolves an S&P 500 ticker list to CIKs via SEC's map
 lib/lakebase.py            Postgres helper — run_query / run_write (edgar schema)
 lib/warehouse.py           Gold/Silver Delta reads via the SQL warehouse
 lib/sec_client.py          rate-limited SEC EDGAR client (token bucket, retry)
@@ -40,6 +42,8 @@ app.yaml  databricks.yml   Databricks App + Asset Bundle (analytics job) config
 docs/ARCHITECTURE.md       Lakebase <-> Lakehouse data-flow + job triggers
 docs/PIPELINE.md           plain-language: every notebook, the 5 bronze tables, CIK/forms/XBRL
 docs/ANALYST_SPEC.md       the target analyst spec + what's built vs. scoped-future
+docs/RAG_REVIEW.md         chunking / embedding / retrieval choices vs the modules
+docs/SCALING.md            running the full ~470-company universe (Volume V)
 docs/SETUP.md              first-time infra runbook
 ```
 

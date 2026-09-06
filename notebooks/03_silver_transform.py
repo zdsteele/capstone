@@ -4,17 +4,22 @@
 # environment_version = "5"
 # ///
 # MAGIC %md
-# MAGIC # 03 · Silver — clean & normalize
+# MAGIC # 03 · Silver — clean & normalize  (distributed — scales to the full universe)
 # MAGIC
 # MAGIC | Table | Built from | Notes |
 # MAGIC |---|---|---|
 # MAGIC | `silver_companies` | `bronze_company_submissions` | typed dimension, CIK/ticker/name |
 # MAGIC | `silver_filings` | `bronze_filings` | dedup on accession, typed dates |
-# MAGIC | `silver_financial_facts` | `bronze_xbrl_facts` (companyfacts JSON) | exploded to one row per observation; partitioned by fiscal year/quarter, ZORDER cik |
+# MAGIC | `silver_financial_facts` | `bronze_xbrl_facts` (companyfacts JSON) | **`mapInPandas`** explode → one row per observation; partitioned by fiscal year/quarter |
 # MAGIC | `silver_financial_periods` | `silver_financial_facts` | distinct reporting periods |
-# MAGIC | `silver_filing_sections` | `bronze_filing_text` (primary_html) | HTML → 10-K/10-Q Item sections |
-# MAGIC | `silver_exhibits` | `bronze_filing_text` (submission_txt) | SGML `<DOCUMENT>` manifest |
-# MAGIC | `silver_filing_text_chunks` | `silver_filing_sections` | 400/60 chunks, CDF enabled (feeds Vector Search) |
+# MAGIC | `silver_filing_sections` | `bronze_filing_text` (primary_html) | **`mapInPandas`** HTML → Item sections |
+# MAGIC | `silver_exhibits` | `bronze_filing_text` (submission_txt) | **`mapInPandas`** SGML `<DOCUMENT>` manifest |
+# MAGIC | `silver_filing_text_chunks` | `silver_filing_sections` | **`mapInPandas`** 1100/150 chunks, CDF enabled |
+# MAGIC
+# MAGIC The parse helpers in `lib/edgar_parse.py` are pure-Python (only `re`) — they
+# MAGIC run inside the `mapInPandas` UDFs on executors via `addPyFile`, so nothing
+# MAGIC is `collect()`-ed to the driver. This is what lets it handle ~500 companies
+# MAGIC × years of filings without OOMing.
 
 # COMMAND ----------
 
@@ -27,38 +32,48 @@ _repo_root = os.path.abspath(os.path.join(os.getcwd(), ".."))
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
-from lib.edgar_parse import (
-    flatten_company_facts,
-    parse_filing_html,
-    parse_submission_documents,
-    chunk_text,
-)
+# ship the pure-Python parser to executors for the mapInPandas UDFs
+_edgar_parse_path = os.path.join(_repo_root, "lib", "edgar_parse.py")
+spark.sparkContext.addPyFile(_edgar_parse_path)
 
 dbutils.widgets.text("catalog", "bootcamp_students")
 dbutils.widgets.text("schema", "zdsteele_capstone")
+dbutils.widgets.text("shuffle_partitions", "200")   # bump for the full universe
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 T = lambda name: f"{CATALOG}.{SCHEMA}.{name}"
 
+spark.conf.set("spark.sql.shuffle.partitions", dbutils.widgets.get("shuffle_partitions"))
+
 from pyspark.sql import functions as F
+from pyspark.sql.types import (
+    StructType, StructField, StringType, DoubleType, LongType, IntegerType,
+)
+
+
+def _import_edgar_parse():
+    """Import the parser whether it's on the path as `lib.edgar_parse` (driver)
+    or as a top-level `edgar_parse` module (executor, via addPyFile)."""
+    try:
+        from lib import edgar_parse as ep
+    except Exception:
+        import edgar_parse as ep
+    return ep
 
 # COMMAND ----------
 
 # DBTITLE 1,silver_companies
 subs = spark.table(T("bronze_company_submissions"))
-silver_companies = (
-    subs.select(
-        F.lpad(F.col("cik"), 10, "0").alias("cik"),
-        F.coalesce(F.col("ticker"), F.split(F.col("tickers"), ",").getItem(0)).alias("ticker"),
-        F.col("entity_name").alias("name"),
-        F.col("sic"),
-        F.col("sic_description"),
-        F.col("fiscal_year_end"),
-        F.col("exchanges"),
-        F.col("ingested_at"),
-    )
-    .dropDuplicates(["cik"])
-)
+silver_companies = subs.select(
+    F.lpad(F.col("cik"), 10, "0").alias("cik"),
+    F.coalesce(F.col("ticker"), F.split(F.col("tickers"), ",").getItem(0)).alias("ticker"),
+    F.col("entity_name").alias("name"),
+    F.col("sic"),
+    F.col("sic_description"),
+    F.col("fiscal_year_end"),
+    F.col("exchanges"),
+    F.col("ingested_at"),
+).dropDuplicates(["cik"])
 silver_companies.write.format("delta").mode("overwrite").option(
     "overwriteSchema", "true"
 ).saveAsTable(T("silver_companies"))
@@ -78,18 +93,13 @@ silver_filings = (
         "sec_url",
         F.concat(
             F.lit("https://www.sec.gov/Archives/edgar/data/"),
-            F.expr("cast(cast(cik as bigint) as string)"),
-            F.lit("/"),
-            F.regexp_replace("accession", "-", ""),
-            F.lit("/"),
+            F.expr("cast(cast(cik as bigint) as string)"), F.lit("/"),
+            F.regexp_replace("accession", "-", ""), F.lit("/"),
             F.col("primary_document"),
         ),
     )
     .dropDuplicates(["accession"])
-)
-# quality gate: keys present
-silver_filings = silver_filings.filter(
-    F.col("cik").isNotNull() & F.col("accession").isNotNull()
+    .filter(F.col("cik").isNotNull() & F.col("accession").isNotNull())
 )
 silver_filings.write.format("delta").mode("overwrite").option(
     "overwriteSchema", "true"
@@ -98,27 +108,54 @@ print("silver_filings:", silver_filings.count())
 
 # COMMAND ----------
 
-# DBTITLE 1,silver_financial_facts  (explode companyfacts JSON)
-# Driver-side flatten: a handful of large JSON blobs (one per CIK). At >100 CIKs,
-# swap this loop for a mapInPandas over bronze_xbrl_facts.
-facts_src = spark.table(T("bronze_xbrl_facts")).select("cik", "companyfacts_json").collect()
+# DBTITLE 1,silver_financial_facts  (mapInPandas explode of companyfacts JSON)
+_FACTS_SCHEMA = StructType([
+    StructField("cik", StringType()),
+    StructField("entity_name", StringType()),
+    StructField("taxonomy", StringType()),
+    StructField("concept", StringType()),
+    StructField("label", StringType()),
+    StructField("unit", StringType()),
+    StructField("period_start", StringType()),
+    StructField("period_end", StringType()),
+    StructField("value", DoubleType()),
+    StructField("accession", StringType()),
+    StructField("fiscal_year", LongType()),
+    StructField("fiscal_period", StringType()),
+    StructField("form", StringType()),
+    StructField("frame", StringType()),
+    StructField("filed", StringType()),
+])
+_FACT_COLS = [f.name for f in _FACTS_SCHEMA.fields]
 
-all_rows = []
-for r in facts_src:
-    try:
-        payload = json.loads(r["companyfacts_json"])
-    except Exception as exc:
-        print("  bad companyfacts json for", r["cik"], exc)
-        continue
-    all_rows.extend(flatten_company_facts(payload, r["cik"]))
-print("raw fact rows:", len(all_rows))
 
-facts_df = spark.createDataFrame(all_rows)
+def _flatten_facts(iterator):
+    import json as _json
+    import pandas as pd
+    ep = _import_edgar_parse()
+    for pdf in iterator:
+        rows = []
+        for _, r in pdf.iterrows():
+            try:
+                payload = _json.loads(r["companyfacts_json"])
+            except Exception:
+                continue
+            rows.extend(ep.flatten_company_facts(payload, r["cik"]))
+        yield pd.DataFrame(rows, columns=_FACT_COLS) if rows else pd.DataFrame(columns=_FACT_COLS)
+
+
+n_ciks = spark.table(T("bronze_xbrl_facts")).count()
+facts_raw = (
+    spark.table(T("bronze_xbrl_facts"))
+    .select("cik", "companyfacts_json")
+    .repartition(max(8, min(256, n_ciks)))          # one big JSON blob per CIK — spread them
+    .mapInPandas(_flatten_facts, schema=_FACTS_SCHEMA)
+)
 
 known_filings = spark.table(T("silver_filings")).select("cik", "accession").dropDuplicates()
 
 silver_financial_facts = (
-    facts_df.withColumn("period_start", F.to_date("period_start"))
+    facts_raw.withColumn("period_start", F.to_date("period_start"))
     .withColumn("period_end", F.to_date("period_end"))
     .withColumn(
         "fiscal_quarter",
@@ -126,25 +163,21 @@ silver_financial_facts = (
         .when(F.col("fiscal_period").startswith("Q"), F.regexp_extract("fiscal_period", r"Q(\d)", 1).cast("int"))
         .otherwise(F.quarter("period_end")),
     )
-    # period_type — companyfacts reports the same concept at several durations for
-    # the same fiscal_period (3-month, 6/9-month YTD, 12-month). Classify by the
-    # start..end span so Gold can pick the right one (a "Q3" number should be the
-    # 3-month value, not the 9-month YTD).
+    # companyfacts `fy` is unreliable — keep it, but fall back to calendar year so
+    # the partition column is never null at scale.
+    .withColumn("fiscal_year", F.coalesce(F.col("fiscal_year").cast("int"), F.year("period_end")))
     .withColumn("duration_days", F.datediff("period_end", "period_start"))
     .withColumn(
         "period_type",
-        F.when(F.col("period_start").isNull(), F.lit("instant"))       # balance-sheet
-        .when(F.col("duration_days") <= 110, F.lit("quarter"))         # ~90-92
-        .when(F.col("duration_days") <= 200, F.lit("half"))            # ~180
-        .when(F.col("duration_days") <= 300, F.lit("ytd9"))            # ~270
-        .otherwise(F.lit("annual")),                                   # ~365
+        F.when(F.col("period_start").isNull(), F.lit("instant"))
+        .when(F.col("duration_days") <= 110, F.lit("quarter"))
+        .when(F.col("duration_days") <= 200, F.lit("half"))
+        .when(F.col("duration_days") <= 300, F.lit("ytd9"))
+        .otherwise(F.lit("annual")),
     )
-    # quality gates: non-null keys + numeric present + referential to a known filing
     .filter(
-        F.col("cik").isNotNull()
-        & F.col("period_end").isNotNull()
-        & F.col("value").isNotNull()
-        & F.col("accession").isNotNull()
+        F.col("cik").isNotNull() & F.col("period_end").isNotNull()
+        & F.col("value").isNotNull() & F.col("accession").isNotNull()
     )
     .join(known_filings, ["cik", "accession"], "left_semi")
     .dropDuplicates(["cik", "accession", "taxonomy", "concept", "unit", "period_start", "period_end"])
@@ -152,8 +185,7 @@ silver_financial_facts = (
 
 (
     silver_financial_facts.write.format("delta")
-    .mode("overwrite")
-    .option("overwriteSchema", "true")
+    .mode("overwrite").option("overwriteSchema", "true")
     .partitionBy("fiscal_year", "fiscal_quarter")
     .saveAsTable(T("silver_financial_facts"))
 )
@@ -178,93 +210,134 @@ print("silver_financial_periods:", silver_periods.count())
 
 # COMMAND ----------
 
-# DBTITLE 1,silver_filing_sections  (HTML -> Item sections)
-html_rows = (
+# DBTITLE 1,silver_filing_sections  (mapInPandas HTML -> Item sections)
+_SEC_SCHEMA = StructType([
+    StructField("cik", StringType()),
+    StructField("accession", StringType()),
+    StructField("document", StringType()),
+    StructField("section_index", IntegerType()),
+    StructField("section", StringType()),
+    StructField("heading", StringType()),
+    StructField("text", StringType()),
+    StructField("char_len", LongType()),
+])
+_SEC_COLS = [f.name for f in _SEC_SCHEMA.fields]
+
+
+def _parse_sections(iterator):
+    import pandas as pd
+    ep = _import_edgar_parse()
+    for pdf in iterator:
+        out = []
+        for _, r in pdf.iterrows():
+            try:
+                secs = ep.parse_filing_html(r["text"] or "")
+            except Exception:
+                secs = []
+            for i, s in enumerate(secs):
+                out.append({
+                    "cik": str(r["cik"]).zfill(10),
+                    "accession": r["accession"],
+                    "document": r["document"],
+                    "section_index": i,
+                    "section": s["section"],
+                    "heading": s["heading"],
+                    "text": s["text"],
+                    "char_len": len(s["text"] or ""),
+                })
+        yield pd.DataFrame(out, columns=_SEC_COLS) if out else pd.DataFrame(columns=_SEC_COLS)
+
+
+html_src = (
     spark.table(T("bronze_filing_text"))
     .filter(F.col("doc_kind") == "primary_html")
     .select("cik", "accession", "document", "text")
-    .collect()
 )
-
-section_rows = []
-for r in html_rows:
-    for i, sec in enumerate(parse_filing_html(r["text"])):
-        section_rows.append(
-            {
-                "cik": str(r["cik"]).zfill(10),
-                "accession": r["accession"],
-                "document": r["document"],
-                "section_index": i,
-                "section": sec["section"],
-                "heading": sec["heading"],
-                "text": sec["text"],
-                "char_len": len(sec["text"]),
-            }
-        )
-print("section rows:", len(section_rows))
-
-silver_sections = spark.createDataFrame(section_rows) if section_rows else spark.createDataFrame(
-    [], "cik string, accession string, document string, section_index int, section string, heading string, text string, char_len long"
-)
+silver_sections = html_src.repartition(200).mapInPandas(_parse_sections, schema=_SEC_SCHEMA)
 silver_sections.write.format("delta").mode("overwrite").option(
     "overwriteSchema", "true"
 ).saveAsTable(T("silver_filing_sections"))
-print("silver_filing_sections:", silver_sections.count())
+print("silver_filing_sections:", spark.table(T("silver_filing_sections")).count())
 
 # COMMAND ----------
 
-# DBTITLE 1,silver_exhibits  (submission .txt SGML manifest)
-sub_rows = (
+# DBTITLE 1,silver_exhibits  (mapInPandas submission .txt SGML manifest)
+_EXH_SCHEMA = StructType([
+    StructField("cik", StringType()),
+    StructField("accession", StringType()),
+    StructField("sequence", StringType()),
+    StructField("doc_type", StringType()),
+    StructField("filename", StringType()),
+    StructField("description", StringType()),
+])
+_EXH_COLS = [f.name for f in _EXH_SCHEMA.fields]
+
+
+def _parse_exhibits(iterator):
+    import pandas as pd
+    ep = _import_edgar_parse()
+    for pdf in iterator:
+        out = []
+        for _, r in pdf.iterrows():
+            try:
+                docs = ep.parse_submission_documents(r["text"] or "")
+            except Exception:
+                docs = []
+            for d in docs:
+                out.append({
+                    "cik": str(r["cik"]).zfill(10),
+                    "accession": r["accession"],
+                    "sequence": d["sequence"], "doc_type": d["doc_type"],
+                    "filename": d["filename"], "description": d["description"],
+                })
+        yield pd.DataFrame(out, columns=_EXH_COLS) if out else pd.DataFrame(columns=_EXH_COLS)
+
+
+sub_src = (
     spark.table(T("bronze_filing_text"))
     .filter(F.col("doc_kind") == "submission_txt")
     .select("cik", "accession", "text")
-    .collect()
 )
-exhibit_rows = []
-for r in sub_rows:
-    for d in parse_submission_documents(r["text"]):
-        exhibit_rows.append(
-            {
-                "cik": str(r["cik"]).zfill(10),
-                "accession": r["accession"],
-                "sequence": d["sequence"],
-                "doc_type": d["doc_type"],
-                "filename": d["filename"],
-                "description": d["description"],
-            }
-        )
-print("exhibit rows:", len(exhibit_rows))
-silver_exhibits = spark.createDataFrame(exhibit_rows) if exhibit_rows else spark.createDataFrame(
-    [], "cik string, accession string, sequence string, doc_type string, filename string, description string"
-)
+silver_exhibits = sub_src.repartition(200).mapInPandas(_parse_exhibits, schema=_EXH_SCHEMA)
 silver_exhibits.write.format("delta").mode("overwrite").option(
     "overwriteSchema", "true"
 ).saveAsTable(T("silver_exhibits"))
-print("silver_exhibits:", silver_exhibits.count())
+print("silver_exhibits:", spark.table(T("silver_exhibits")).count())
 
 # COMMAND ----------
 
-# DBTITLE 1,silver_filing_text_chunks  (CDF enabled -> feeds Vector Search)
-# ~1100/150 chars (~170/25 tokens): SEC narrative prose is dense and
-# long-sentenced — 400-char chunks fragment a single risk/MD&A point. Larger
-# chunks + the section-level `parent_text` join in notebook 05 give the
-# parent-child pattern (precise retrieval, full-section context to the LLM).
-chunk_rows = []
-for r in section_rows:
-    for j, ch in enumerate(chunk_text(r["text"], 1100, 150)):
-        chunk_rows.append(
-            {
-                "chunk_id": f"{r['accession']}::{r['section_index']}::{j}",
-                "cik": r["cik"],
-                "accession": r["accession"],
-                "section": r["section"],
-                "section_index": r["section_index"],
-                "heading": r["heading"],
-                "chunk_index": j,
-                "chunk_text": ch,
-            }
-        )
-print("chunk rows:", len(chunk_rows))
+# DBTITLE 1,silver_filing_text_chunks  (mapInPandas 1100/150 chunks; CDF enabled)
+# ~1100/150 chars (~170/25 tokens): SEC prose is dense and long-sentenced — 400
+# fragments a single risk/MD&A point. Larger chunks + the section-level
+# `parent_text` join in nb 05 = parent-child retrieval.
+_CHUNK_SCHEMA = StructType([
+    StructField("chunk_id", StringType()),
+    StructField("cik", StringType()),
+    StructField("accession", StringType()),
+    StructField("section", StringType()),
+    StructField("section_index", IntegerType()),
+    StructField("heading", StringType()),
+    StructField("chunk_index", IntegerType()),
+    StructField("chunk_text", StringType()),
+])
+_CHUNK_COLS = [f.name for f in _CHUNK_SCHEMA.fields]
+
+
+def _chunk_sections(iterator):
+    import pandas as pd
+    ep = _import_edgar_parse()
+    for pdf in iterator:
+        out = []
+        for _, r in pdf.iterrows():
+            for j, ch in enumerate(ep.chunk_text(r["text"] or "", 1100, 150)):
+                out.append({
+                    "chunk_id": f"{r['accession']}::{r['section_index']}::{j}",
+                    "cik": r["cik"], "accession": r["accession"],
+                    "section": r["section"], "section_index": int(r["section_index"]),
+                    "heading": r["heading"], "chunk_index": j, "chunk_text": ch,
+                })
+        yield pd.DataFrame(out, columns=_CHUNK_COLS) if out else pd.DataFrame(columns=_CHUNK_COLS)
+
 
 spark.sql(
     f"""
@@ -274,27 +347,27 @@ spark.sql(
     ) USING DELTA TBLPROPERTIES (delta.enableChangeDataFeed = true)
     """
 )
-if chunk_rows:
-    (
-        spark.createDataFrame(chunk_rows)
-        .write.format("delta")
-        .mode("overwrite")
-        .option("overwriteSchema", "true")
-        .saveAsTable(T("silver_filing_text_chunks"))
-    )
+chunks = (
+    spark.table(T("silver_filing_sections"))
+    .filter(F.length("text") > 0)
+    .select("cik", "accession", "section", "section_index", "heading", "text")
+    .repartition(200)
+    .mapInPandas(_chunk_sections, schema=_CHUNK_SCHEMA)
+)
+chunks.write.format("delta").mode("overwrite").option(
+    "overwriteSchema", "true"
+).saveAsTable(T("silver_filing_text_chunks"))
 print("silver_filing_text_chunks:", spark.table(T("silver_filing_text_chunks")).count())
 
 # COMMAND ----------
 
 dbutils.notebook.exit(
-    json.dumps(
-        {
-            "status": "ok",
-            "silver_companies": spark.table(T("silver_companies")).count(),
-            "silver_filings": spark.table(T("silver_filings")).count(),
-            "silver_financial_facts": spark.table(T("silver_financial_facts")).count(),
-            "silver_filing_sections": spark.table(T("silver_filing_sections")).count(),
-            "silver_filing_text_chunks": spark.table(T("silver_filing_text_chunks")).count(),
-        }
-    )
+    json.dumps({
+        "status": "ok",
+        "silver_companies": spark.table(T("silver_companies")).count(),
+        "silver_filings": spark.table(T("silver_filings")).count(),
+        "silver_financial_facts": spark.table(T("silver_financial_facts")).count(),
+        "silver_filing_sections": spark.table(T("silver_filing_sections")).count(),
+        "silver_filing_text_chunks": spark.table(T("silver_filing_text_chunks")).count(),
+    })
 )
