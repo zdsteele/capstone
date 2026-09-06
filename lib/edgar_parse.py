@@ -68,50 +68,71 @@ def _to_float(v):
 # 2. Filing HTML -> sections
 # ---------------------------------------------------------------------------
 
-# "Item 1A.", "ITEM 7", "Item&nbsp;1B" etc. at the start of a line.
+# "Item 1A.", "ITEM 7", "Item 8.01", "Item&nbsp;1B" etc. at the start of a line.
+# Captures the sub-number for 8-K items (8.01) and the letter for 10-K items (1A).
 _ITEM_RE = re.compile(
-    r"^\s*item\s+(\d{1,2}[A-Z]?)\s*[.:\-–]?\s*(.*)$",
+    r"^\s*item\s+(\d{1,2}(?:\.\d{1,2})?[a-z]?)[.:)\-–\s]*(.*)$",
     re.IGNORECASE,
 )
+# table-of-contents rows: "... Business .......... 4" or a trailing page number.
+_TOC_RE = re.compile(r"\.{2,}\s*\d{1,4}\s*$|\t\d{1,4}\s*$")
 
 
 def parse_filing_html(html: str, max_section_chars: int = 400_000) -> list[dict]:
     """Return ``[{"section": "Item 7", "heading": "...", "text": "..."}]``.
 
-    Uses BeautifulSoup with the stdlib ``html.parser`` backend (matches
-    ``unstructured-data-2026``); falls back to a regex strip if bs4 is absent.
+    Splits on 10-K / 10-Q / 8-K "Item" headings. Robust to the two things that
+    wreck a naive split: the item name repeated as a running page header (many
+    empty "Item 1" sections) and the table of contents (many "Item N" lines in
+    quick succession). Fragments for the same item are merged; a repeated item
+    keeps the occurrence with the most body.
+
+    Uses BeautifulSoup with the stdlib ``html.parser`` backend; falls back to a
+    regex strip if bs4 is absent.
     """
     text = _html_to_text(html)
     lines = [ln.rstrip() for ln in text.split("\n")]
 
-    sections: list[dict] = []
+    raw: list[dict] = []
     current = {"section": "PREAMBLE", "heading": "", "buf": []}
 
     def _flush():
         body = "\n".join(current["buf"]).strip()
         if body:
-            sections.append(
-                {
-                    "section": current["section"],
-                    "heading": current["heading"],
-                    "text": body[:max_section_chars],
-                }
+            raw.append(
+                {"section": current["section"], "heading": current["heading"], "text": body}
             )
 
     for ln in lines:
         m = _ITEM_RE.match(ln)
-        # Treat as a heading only if the line is short (real headings are).
-        if m and len(ln) <= 120:
+        is_heading = bool(m) and len(ln) <= 120 and not _TOC_RE.search(ln)
+        if is_heading:
+            sec = f"Item {m.group(1).upper().rstrip('.')}"
+            # running page header for the item we're already inside -> body line
+            if sec == current["section"]:
+                continue
             _flush()
-            current = {
-                "section": f"Item {m.group(1).upper()}",
-                "heading": m.group(2).strip()[:200],
-                "buf": [],
-            }
+            current = {"section": sec, "heading": m.group(2).strip()[:200], "buf": []}
         else:
             current["buf"].append(ln)
     _flush()
-    return sections
+
+    # merge fragments per section id; for a repeated id keep the richest heading
+    merged: dict[str, dict] = {}
+    order: list[str] = []
+    for s in raw:
+        key = s["section"]
+        if key not in merged:
+            merged[key] = {"section": key, "heading": s["heading"], "text": s["text"]}
+            order.append(key)
+        else:
+            cur = merged[key]
+            cur["text"] = (cur["text"] + "\n\n" + s["text"])
+            if len(s["text"]) > len(cur["text"]) - len(s["text"]) and s["heading"]:
+                cur["heading"] = s["heading"]
+    return [
+        {**merged[k], "text": merged[k]["text"][:max_section_chars]} for k in order
+    ]
 
 
 def _html_to_text(html: str) -> str:

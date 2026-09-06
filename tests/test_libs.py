@@ -63,6 +63,24 @@ def test_parse_filing_html_sections():
     assert all("ignored" not in s["text"] for s in secs)
 
 
+def test_parse_filing_html_dedups_page_headers_and_8k_items():
+    # "Item 1" repeated as a running page header must not spawn extra sections;
+    # 8-K sub-numbered items keep the dotted form.
+    html = (
+        "<p>Item 1. Business</p><p>Para one about the business here.</p>"
+        "<p>Item 1</p><p>Para two, still the business section.</p>"
+        "<p>Item 1</p><p>Para three.</p>"
+        "<p>Item 8.01 Other Events</p><p>Something material happened.</p>"
+        "<p>Item 9.01 Financial Statements and Exhibits</p><p>See exhibit 99.1.</p>"
+    )
+    secs = ep.parse_filing_html(html)
+    names = [s["section"] for s in secs]
+    assert names.count("Item 1") == 1
+    assert "Item 8.01" in names and "Item 9.01" in names
+    item1 = next(s for s in secs if s["section"] == "Item 1")
+    assert "Para two" in item1["text"] and "Para three" in item1["text"]
+
+
 def test_parse_submission_documents():
     txt = (
         "<DOCUMENT>\n<TYPE>10-Q\n<SEQUENCE>1\n<FILENAME>a.htm\n<DESCRIPTION>FORM 10-Q\n</DOCUMENT>\n"
