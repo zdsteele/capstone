@@ -43,18 +43,27 @@ with open(dbutils.widgets.get("ciks_config")) as fh:
 INGESTED_AT = dt.datetime.utcnow().isoformat()
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
 
+from pyspark.sql import functions as _F
+
 FULL_PERIOD = dbutils.widgets.get("full_period")
 INCR_PERIOD = dbutils.widgets.get("incr_period")
 FORCE_FULL = MODE == "full"
 
-# per-ticker, not per-table: a ticker with no history yet gets the full pull even
-# when the table already exists (the scale bug — 470 new S&P 500 tickers were
-# getting only a 5-day window because bronze_market_bars existed from the pilot).
+# per-ticker: a ticker only gets the short incremental window if it already has
+# *deep* history (earliest bar > 300 days back). A ticker with just a handful of
+# recent rows — e.g. from a prior 5-day incremental run before it was backfilled
+# — still gets the full pull. ("any row" was the bug: 470 new S&P 500 tickers
+# each got ~5 rows on the first incremental run and were never backfilled.)
 if spark.catalog.tableExists(TABLE):
-    _have = {r["ticker"] for r in spark.table(TABLE).select("ticker").distinct().collect()}
+    _have = {
+        r["ticker"] for r in spark.table(TABLE)
+        .groupBy("ticker").agg(_F.min("bar_date").alias("first_bar"))
+        .filter(_F.col("first_bar") <= _F.date_sub(_F.current_date(), 300))
+        .collect()
+    }
 else:
     _have = set()
-print(f"{len(COMPANIES)} tickers  ({len(_have)} already have history)  "
+print(f"{len(COMPANIES)} tickers  ({len(_have)} have deep history -> incremental)  "
       f"mode={MODE}  full={FULL_PERIOD}  incr={INCR_PERIOD}")
 
 # COMMAND ----------

@@ -89,9 +89,9 @@ The deployed Databricks App gets Lakebase creds + the warehouse binding from
 ## Pipeline (run order, Databricks notebooks)
 
 The `NN_` prefixes are a human build order — no notebook triggers the next.
-Dependency order: `01 → 03 → {04, 05, 08, 12} → 09 → 11 → 10`; `02` alongside
-`01` (best-effort); `07` whenever; `06` is event-triggered (see Jobs). `13-14`
-(ownership/governance) run standalone. Full graph + cadence table in
+Dependency order: `01 → 03 → {04, 05, 08, 12, 13} → 09 → 11 → 10`; `02` and `14`
+alongside `01` (best-effort); `10` waits on 09/11/12/13/14; `07` whenever; `06`
+is event-triggered (see Jobs). Full graph + cadence table in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 - **01 / 02 are incremental** — `mode` widget (`incremental` default | `full`).
@@ -106,7 +106,7 @@ Dependency order: `01 → 03 → {04, 05, 08, 12} → 09 → 11 → 10`; `02` al
 
 | Job | Kind | Runs |
 |---|---|---|
-| `pipeline_daily_refresh` | scheduled, 06:30 America/New_York | chain 01→12 (skips 06, 07, 13, 14); **live only under `-t prod`** — dev mode auto-pauses schedules |
+| `pipeline_daily_refresh` | scheduled, 06:30 America/New_York | the whole chain 01→14 (skips 06 = CDF-triggered, 07 = manual UC tags); **live only under `-t prod`** — dev mode auto-pauses schedules |
 | `analytics_cdf_on_change` | `trigger.table_update` on the 6 `lb_*_history` tables (60 s debounce) | `06_analytics_cdf.py` |
 
 `databricks bundle deploy -t dev` for local iteration (schedule paused);
