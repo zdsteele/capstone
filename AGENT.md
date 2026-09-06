@@ -105,6 +105,18 @@ Dependency order: `01, 02 → 03 → {04, 05, 08} → 09 → 10`; `07` whenever;
 `databricks bundle deploy -t prod` to arm the daily job. The bundle also deploys
 the `edgar-intelligence` App.
 
+Run a job from the CLI: `databricks bundle run pipeline_daily_refresh -t dev`
+(or `analytics_cdf_on_change`). Add `--no-wait` to fire and return.
+
+**Lakebase binding.** This workspace runs *autoscaling* Lakebase (Postgres
+projects/branches), not classic Database Instances — the app resource is a
+`postgres:` block (`branch` + `database` resource-name paths), added only under
+`targets.prod` in `databricks.yml`. Binding it needs `CAN_MANAGE` on the
+`zdsteele-capstone` Postgres project, so `-t prod` must be deployed by the
+project owner (or a principal granted CAN_MANAGE). `-t dev` deploys the app
+without the binding; it then reads Lakebase via `LAKEBASE_URL` (the `edgar_app`
+role). Resource paths: `databricks postgres list-branches projects/zdsteele-capstone`.
+
 ## Conventions & gotchas
 
 - **Commits**: imperative subject, `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.

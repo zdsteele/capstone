@@ -31,10 +31,12 @@ resources:
         after the prior business day's filings are disseminated.
       tags:
         project: edgar_capstone
+        owner: zdsteele
       schedule:
         quartz_cron_expression: "0 30 6 * * ?"
         timezone_id: "America/New_York"
-        pause_status: UNPAUSED
+        # no pause_status → dev target pauses it (DAB development mode),
+        # prod target leaves it live.
       max_concurrent_runs: 1
       queue:
         enabled: true
@@ -133,6 +135,7 @@ resources:
         Debounced 60s so a burst of agent writes batches into one run.
       tags:
         project: edgar_capstone
+        owner: zdsteele
       trigger:
         table_update:
           condition: ANY_UPDATED
@@ -163,17 +166,15 @@ resources:
       description: "EDGAR Intelligence Platform frontend + in-process research agent"
       source_code_path: .
       resources:
-        # Lakebase — injects PGHOST/PGUSER/PGDATABASE/PGPORT + a rotated credential
-        - name: database
-          database:
-            database_name: databricks_postgres
-            instance_name: zdsteele-capstone
-            permission: CAN_CONNECT_AND_CREATE
         # SQL warehouse for Gold/Silver Delta reads
         - name: sql_warehouse
           sql_warehouse:
             id: "${var.warehouse_id}"
             permission: CAN_USE
+        # The Lakebase binding is added per-target (see `targets.prod` below).
+        # Binding the branch requires CAN_MANAGE on the `zdsteele-capstone`
+        # Postgres project — the deploying identity must own it or be granted it.
+        # Locally / dev the app reads Lakebase via LAKEBASE_URL (edgar_app role).
 
 targets:
   dev:
@@ -181,3 +182,20 @@ targets:
     default: true
   prod:
     mode: production
+    resources:
+      apps:
+        edgar_intelligence:
+          resources:
+            - name: sql_warehouse
+              sql_warehouse:
+                id: "${var.warehouse_id}"
+                permission: CAN_USE
+            # Lakebase autoscaling Postgres (projects/branches — not classic
+            # Database Instances). Apps provisions a Postgres role for the app
+            # SP and injects PGHOST/PGUSER/PGDATABASE/PGPORT + a rotated OAuth
+            # credential. Paths: `databricks postgres list-branches projects/zdsteele-capstone`.
+            - name: database
+              postgres:
+                branch: projects/zdsteele-capstone/branches/production
+                database: projects/zdsteele-capstone/branches/production/databases/databricks-postgres
+                permission: CAN_CONNECT_AND_CREATE

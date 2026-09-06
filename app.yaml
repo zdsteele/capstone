@@ -3,9 +3,12 @@ command:
   - "app.py"
 
 env:
-  # Lakebase (Postgres) — the deployed app gets PGHOST/PGUSER/PGDATABASE/PGPORT
-  # (+ a rotated credential) automatically from the `database` resource binding
-  # in databricks.yml. lib/lakebase.py reads those; no secret to create.
+  # Lakebase (Postgres). Under the `prod` target databricks.yml binds the
+  # `zdsteele-capstone` Postgres branch as an app resource, so the deployed app
+  # gets PGHOST/PGUSER/PGDATABASE/PGPORT + a rotated OAuth credential injected.
+  # In dev / local there is no binding — lib/lakebase.py falls back to
+  # LAKEBASE_URL (the edgar_app native-password role). Set LAKEBASE_URL as an
+  # app secret for a dev deploy that needs live Lakebase.
   - name: LAKEBASE_SCHEMA
     value: "edgar"
   - name: LAKEBASE_INSTANCE
