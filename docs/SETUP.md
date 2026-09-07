@@ -12,7 +12,7 @@ Workspace values (this deployment):
 | SQL warehouse | `Serverless Starter Warehouse`, id `b15d3d6f837ba428` |
 | Lakebase (Postgres) | autoscaling project `zdsteele-capstone`, branch `production`, schema `edgar` |
 | App Postgres role | `edgar_app` (native password — not the 1-hour OAuth token) |
-| LLM | serving endpoint `databricks-meta-llama-3-3-70b-instruct` |
+| LLM | agent: `databricks-claude-sonnet-5` · pipeline `ai_query`: `databricks-meta-llama-3-3-70b-instruct` |
 | Vector Search | index `…zdsteele_capstone.filing_text_index` on endpoint `zachy_vs` |
 
 ---

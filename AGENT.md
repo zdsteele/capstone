@@ -36,8 +36,9 @@ notebooks/                 01 bronze SEC · 02 market · 03 silver · 04 gold ·
                            10 company health · 11 valuation · 12 filing-language diff ·
                            13 ownership forms · 14 governance
 agent/prompt.py            analyst system prompt
-agent/tools.py             21 tools (retrieval + 5 writes), each logged to agent_actions
-agent/graph.py             LangGraph ReAct loop (ChatDatabricks), run_agent()
+agent/tools.py             23 tools (retrieval + 5 writes), each logged to agent_actions
+agent/graph.py             LangGraph ReAct loop (ChatDatabricks), run_agent() + run_agent_stream()
+agent/eval/                26-case eval suite — run_eval.py (--compare for model A/B)
 app.py                     Flask: 4 screens + JSON API
 templates/ static/         Jinja + vanilla-JS frontend
 app.yaml  databricks.yml   Databricks App + Asset Bundle (analytics job) config
@@ -57,7 +58,7 @@ docs/SETUP.md              first-time infra runbook
 | Raw filing bytes | Volume `bootcamp_students.zdsteele_capstone.bronze_edgar_raw` |
 | Operational Postgres | schema `edgar` on the dedicated Lakebase instance `zdsteele-capstone` |
 | SQL warehouse (Delta reads) | `Serverless Starter Warehouse`, id `b15d3d6f837ba428` |
-| LLM | serving endpoint `databricks-meta-llama-3-3-70b-instruct` (also `ai_query` in notebooks) |
+| LLM | agent: `databricks-claude-sonnet-5`; pipeline `ai_query`: `databricks-meta-llama-3-3-70b-instruct` |
 | Vector Search | index `…zdsteele_capstone.filing_text_index` on endpoint `zachy_vs` |
 
 ## Run locally
@@ -79,7 +80,7 @@ python app.py                                    # http://localhost:8000
 | `DATABRICKS_HOST` / `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` | service-principal M2M auth for the warehouse + LLM (PATs are disabled in this org) |
 | `DATABRICKS_WAREHOUSE_ID` | `b15d3d6f837ba428` |
 | `UC_CATALOG` / `UC_SCHEMA` | `bootcamp_students` / `zdsteele_capstone` |
-| `LLM_ENDPOINT` | `databricks-meta-llama-3-3-70b-instruct` |
+| `LLM_ENDPOINT` | `databricks-claude-sonnet-5` (agent). Claude/gpt-5 endpoints: temperature omitted, thinking disabled — see `agent/graph.py._make_chat` |
 | `VS_ENDPOINT` / `VS_INDEX` | `zachy_vs` / `bootcamp_students.zdsteele_capstone.filing_text_index` (blank both → keyword search) |
 | `FLASK_SECRET_KEY` | any string (session signing) |
 
@@ -134,6 +135,21 @@ role). Resource paths: `databricks postgres list-branches projects/zdsteele-caps
   langchain 0.3 line; 0.5+ pulls `databricks-connect`. `ChatOpenAI` against the
   serving endpoint does NOT parse Llama's tool-call format (`<function=…>` text),
   so `agent/graph.py` uses `ChatDatabricks`.
+- **Claude on Databricks serving** (the agent's default model): the endpoint
+  rejects an explicit `temperature`, which `ChatDatabricks` 0.4.0 hardcodes; it
+  also has adaptive **thinking on by default**, which langchain 0.3.x can't
+  stream and which breaks a multi-turn tool loop (`400 each thinking block must
+  contain thinking`). `_make_chat` subclasses `ChatDatabricks` to strip
+  `temperature`/`n` and sends `thinking: {type: disabled}`. Overrides:
+  `LLM_TEMPERATURE` / `LLM_THINKING=adaptive`. Claude returns `content` as a
+  block list — `_text_of` flattens it and drops reasoning blocks.
+- **Streaming**: `run_agent_stream` → SSE at `POST /api/assistant/stream`
+  (tool_start / tool_end / token / done). Uses `graph.stream(["updates",
+  "messages","values"])`; `values` mode gives the final state for `_finalize`.
+  The JSON `POST /api/assistant/message` stays as the fallback + eval entrypoint.
+- **Agent eval**: `python -m agent.eval.run_eval` (add `--no-judge` for the
+  deterministic checks only, `--compare a,b` for a model bake-off). CI-style
+  exit code. `report*.json` is gitignored.
 - **`ai_query` on this workspace** does not support `responseFormat` (`'json_object'`
   rejected; a DDL string returns plain text). Notebooks 08/10 use plain
   `ai_query` + a strict "one JSON object, single-line strings" prompt +

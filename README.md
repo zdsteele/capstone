@@ -16,9 +16,9 @@ Data Feed. Capstone for the DataExpert.io × Databricks bootcamp.
 - **Company dashboard** → the health verdict first, then financials, computed
   ratios (margins, FCF + the FCF bridge, DSO/DIO/DPO/CCC, ROIC, leverage,
   payout), and market valuation (P/E, EV/EBITDA, FCF yield, shareholder yield)
-- **Research Assistant** → a tool-calling agent (21 tools) that reads filings,
-  screens the universe, runs the numbers, cites every source, and can save
-  filings / watchlists / research notes
+- **Research Assistant** → a tool-calling agent (23 tools, Claude Sonnet 5) that reads filings,
+  screens the universe, runs the numbers, cites every source, streams its
+  answer with live tool status, and can save filings / watchlists / notes
 - **My Workspace** → your saved filings, watchlist, notes
 - **Platform activity** → usage analytics built from the reverse-CDC loop
 
@@ -56,7 +56,7 @@ changes). Nothing else is automated — the `NN_` prefixes are a human run order
 | Spark data pipeline | `notebooks/01`–`04` (bronze → silver → gold), distributed at ~470-company scale |
 | Third-party API | SEC EDGAR APIs (`lib/sec_client.py`) + yfinance (`02_bronze_ingest_market.py`), yfinance feeds `gold_valuation` |
 | Lakebase data model | `sql/10_operational_tables.sql` — 8 tables, `REPLICA IDENTITY FULL` |
-| Action-taking AI agent | `agent/` — 21 tools (retrieval + 5 writes), LangGraph loop, in-process in `app.py` |
+| Action-taking AI agent | `agent/` — 23 tools (retrieval + 5 writes), LangGraph loop + SSE streaming, in-process in `app.py`; `agent/eval/` regression suite |
 | Analytics pipeline (CDF) | `notebooks/06_analytics_cdf.py` + `databricks.yml` `trigger.table_update` job |
 | Frontend | `app.py` + `templates/` — Companies / Dashboard / Research Assistant / My Workspace |
 | Deployed app | Databricks App via `app.yaml` + `databricks.yml` |

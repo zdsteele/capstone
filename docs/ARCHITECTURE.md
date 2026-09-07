@@ -31,7 +31,7 @@ flowchart TB
 
   subgraph APP[Databricks App  — Flask + in-process agent]
     API[JSON API / 4 screens]
-    AGT[LangGraph tool-calling agent]
+    AGT[LangGraph tool-calling agent<br/>Claude Sonnet 5 · 23 tools · SSE streaming]
   end
 
   subgraph LB[Lakebase — zdsteele-capstone / schema edgar  Postgres]
