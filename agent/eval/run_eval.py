@@ -81,9 +81,12 @@ def _contains_any(text: str, needles) -> bool:
     return any(n.lower() in t for n in needles)
 
 
+import re as _re
+
+
 def _judge(case: dict, reply: str, judge_model: str) -> tuple[bool, str]:
     """Grade the reply against case['judge'] with a separate LLM. PASS/FAIL + reason."""
-    from agent.graph import _make_chat, _temperature_for
+    from agent.graph import _make_chat, _temperature_for, _text_of
 
     chat = _make_chat(judge_model, _temperature_for(judge_model))
     rubric = case["judge"]
@@ -92,17 +95,26 @@ def _judge(case: dict, reply: str, judge_model: str) -> tuple[bool, str]:
         f"USER QUESTION:\n{case['q']}\n\n"
         f"GRADING CRITERION (the answer must satisfy this):\n{rubric}\n\n"
         f"ASSISTANT ANSWER:\n{reply}\n\n"
-        "Reply with exactly one line: `PASS - <short reason>` or `FAIL - <short reason>`."
+        "Think if you must, then end your response with a final line of exactly "
+        "`VERDICT: PASS - <short reason>` or `VERDICT: FAIL - <short reason>`."
     )
     try:
         out = chat.invoke(prompt)
-        from agent.graph import _text_of
-
-        line = _text_of(out.content).strip().splitlines()[0]
+        text = _text_of(out.content).strip()
     except Exception as exc:
         return False, f"judge error: {exc}"
-    verdict = line.strip().upper().startswith("PASS")
-    return verdict, line.strip()
+
+    # drop any literal <thinking>…</thinking> the judge wrapped around its work
+    text = _re.sub(r"<thinking>.*?</thinking>", "", text, flags=_re.S | _re.I).strip()
+    m = _re.search(r"VERDICT:\s*(PASS|FAIL)\b[^\n]*", text, _re.I)
+    if not m:  # fall back: last PASS/FAIL token anywhere
+        m = None
+        for mm in _re.finditer(r"\b(PASS|FAIL)\b[^\n]*", text, _re.I):
+            m = mm
+    if not m:
+        return False, f"unparseable judge reply: {text[:160]}"
+    line = m.group(0).strip()
+    return line.upper().lstrip("VERDICT:").strip().startswith("PASS"), line
 
 
 def run_case(case: dict, ctx, judge_model: str | None) -> dict:
