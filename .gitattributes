@@ -1,0 +1,6 @@
+# Force LF for files that run inside the Linux container / shell — a CRLF
+# checkout on Windows would otherwise break them.
+Dockerfile      text eol=lf
+*.sh            text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
