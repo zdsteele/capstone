@@ -30,6 +30,12 @@ import sys
 import time
 from pathlib import Path
 
+try:  # Windows consoles default to cp1252 and choke on report glyphs
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 _HERE = Path(__file__).resolve()
 _CAPSTONE = _HERE.parents[2]
 if str(_CAPSTONE) not in sys.path:
@@ -176,7 +182,7 @@ def run_suite(model: str, cases: list[dict], judge_model: str | None) -> dict:
             fails = [k for k, v in res["checks"].items() if not v]
             print(f"  {mark} {res['id']:<26} {res['secs']:>5}s  "
                   f"tools={res['tools']}  conf={res['confidence']}"
-                  + (f"  ✗{fails}" if fails else ""))
+                  + (f"  failed:{fails}" if fails else ""))
             if res["judge"]:
                 print(f"        judge: {res['judge'][:150]}")
 
