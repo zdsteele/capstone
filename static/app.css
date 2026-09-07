@@ -137,6 +137,18 @@ button.ghost:hover { background: var(--line-2); }
 .inputrow { display: flex; gap: 10px; margin-bottom: 4px; }
 .inputrow input { flex: 1; }
 
+/* save-to-workspace affordances (filing page + dashboard) */
+.saverow { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 8px 0; }
+.saverow button { font-size: 12px; padding: 5px 12px; }
+#d-watch[data-on="1"], #f-save:disabled { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
+.notebox {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 12px; margin: 4px 0 12px;
+}
+.notebox input { flex: 1 1 200px; }
+.notebox textarea { flex: 1 1 100%; min-height: 60px; font: inherit; resize: vertical; }
+
 /* ---------- search results ---------- */
 .results { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
 .row {

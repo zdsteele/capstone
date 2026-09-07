@@ -9,6 +9,7 @@
   <div class="inputrow">
     <input id="d-company" class="search" placeholder="Ticker or CIK — e.g. AAPL, GOOGL, 0000320193" />
     <button id="d-load">Load</button>
+    <button id="d-watch" class="ghost" hidden>☆ Watchlist</button>
   </div>
   <p class="muted" id="d-hint" style="font-size:12px">Pick a company on the <a href="/search">Companies</a> page, or type one above.</p>
 
@@ -80,6 +81,7 @@ async function load() {
   }
   currentCik = cik;
   document.getElementById('d-hint').hidden = true;
+  refreshWatchBtn(cik);
   // load both so tab switches are instant; health leads
   loadHealth(cik).catch(e => {
     document.getElementById('h-note').textContent = 'Could not load the health assessment: ' + e.message;
@@ -91,6 +93,31 @@ async function load() {
 }
 document.getElementById('d-load').addEventListener('click', load);
 document.getElementById('d-company').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
+
+const watchBtn = document.getElementById('d-watch');
+async function refreshWatchBtn(cik) {
+  watchBtn.hidden = false;
+  watchBtn.disabled = false;
+  try {
+    const w = await getJSON('/api/watchlist');
+    const on = (w.watchlist || []).some(r => (r.cik || '') === cik);
+    watchBtn.textContent = on ? '★ On watchlist' : '☆ Watchlist';
+    watchBtn.dataset.on = on ? '1' : '';
+  } catch { watchBtn.textContent = '☆ Watchlist'; }
+}
+watchBtn.addEventListener('click', async () => {
+  if (!currentCik) return;
+  watchBtn.disabled = true;
+  try {
+    const r = await postJSON('/api/watchlist/toggle', { cik: currentCik });
+    watchBtn.textContent = r.on ? '★ On watchlist' : '☆ Watchlist';
+    watchBtn.dataset.on = r.on ? '1' : '';
+  } catch (err) {
+    alert('Could not update watchlist: ' + err.message);
+  } finally {
+    watchBtn.disabled = false;
+  }
+});
 
 // deep link from the Companies grid / Workspace: /dashboard?cik=0000320193
 (() => {

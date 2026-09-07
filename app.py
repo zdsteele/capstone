@@ -579,6 +579,118 @@ def api_saved():
     return jsonify({"filings": filings, "research": research})
 
 
+# ---- direct save from the UI (same Lakebase writes the agent's tools do; also
+# logged to agent_actions so they still flow through the reverse-CDF analytics) -
+
+def _log_ui_action(user_id, name, args, result):
+    import json as _json
+
+    try:
+        lakebase.run_write(
+            """
+            INSERT INTO edgar.agent_actions
+                (conversation_id, user_id, tool_name, tool_kind, args_json, status, result_json)
+            VALUES (NULL, %(uid)s, %(name)s, 'write', %(args)s::jsonb, 'SUCCESS', %(res)s::jsonb)
+            """,
+            {"uid": user_id, "name": name,
+             "args": _json.dumps(args, default=str),
+             "res": _json.dumps(result, default=str)},
+        )
+    except Exception:
+        logger.exception("failed to log ui action %s", name)
+
+
+@app.route("/api/watchlist/toggle", methods=["POST"])
+def api_watchlist_toggle():
+    u = _require_user()
+    body = request.get_json(silent=True) or {}
+    cik = (body.get("cik") or "").strip().zfill(10)
+    if not _CIK_RE.match(cik):
+        return jsonify({"error": "bad cik"}), 400
+    name = (body.get("watchlist") or "My Watchlist").strip()
+    tk = warehouse.query(f"SELECT ticker FROM {T('silver_companies')} WHERE cik = ?", [cik])
+    ticker = tk[0]["ticker"] if tk else None
+    wl = lakebase.run_write(
+        """
+        INSERT INTO edgar.watchlists (user_id, name) VALUES (%(uid)s, %(name)s)
+        ON CONFLICT (user_id, name) DO UPDATE SET name = EXCLUDED.name
+        RETURNING watchlist_id
+        """,
+        {"uid": u["user_id"], "name": name},
+    )
+    wl_id = wl[0]["watchlist_id"]
+    removed = lakebase.run_write(
+        "DELETE FROM edgar.watchlist_companies WHERE watchlist_id = %(wl)s AND cik = %(cik)s RETURNING cik",
+        {"wl": wl_id, "cik": cik},
+    )
+    if removed:
+        _log_ui_action(u["user_id"], "ui_remove_from_watchlist", {"cik": cik}, {"on": False})
+        return jsonify({"on": False, "cik": cik})
+    lakebase.run_write(
+        """
+        INSERT INTO edgar.watchlist_companies (watchlist_id, cik, ticker)
+        VALUES (%(wl)s, %(cik)s, %(tk)s)
+        ON CONFLICT (watchlist_id, cik) DO UPDATE SET ticker = EXCLUDED.ticker
+        """,
+        {"wl": wl_id, "cik": cik, "tk": ticker},
+    )
+    _log_ui_action(u["user_id"], "ui_save_company_to_watchlist", {"cik": cik, "ticker": ticker}, {"on": True})
+    return jsonify({"on": True, "cik": cik, "ticker": ticker})
+
+
+@app.route("/api/saved/filing", methods=["POST"])
+def api_save_filing():
+    u = _require_user()
+    body = request.get_json(silent=True) or {}
+    accession = (body.get("accession") or "").strip()
+    note = (body.get("note") or "").strip() or None
+    if not _ACCESSION_RE.match(accession):
+        return jsonify({"error": "bad accession"}), 400
+    meta = warehouse.query(
+        f"SELECT cik, form, filing_date FROM {T('silver_filings')} WHERE accession = ?", [accession]
+    )
+    if not meta:
+        return jsonify({"error": "unknown filing"}), 404
+    m = meta[0]
+    lakebase.run_write(
+        """
+        INSERT INTO edgar.saved_filings (user_id, company_cik, filing_id, form, filed_at, note)
+        VALUES (%(uid)s, %(cik)s, %(acc)s, %(form)s, %(filed)s, %(note)s)
+        ON CONFLICT (user_id, filing_id)
+            DO UPDATE SET note = COALESCE(EXCLUDED.note, edgar.saved_filings.note)
+        """,
+        {"uid": u["user_id"], "cik": m.get("cik"), "acc": accession,
+         "form": m.get("form"), "filed": m.get("filing_date"), "note": note},
+    )
+    _log_ui_action(u["user_id"], "ui_save_filing", {"accession": accession}, {"saved": True})
+    return jsonify({"saved": True, "accession": accession})
+
+
+@app.route("/api/saved/note", methods=["POST"])
+def api_save_note():
+    u = _require_user()
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()
+    notes = (body.get("notes") or "").strip()
+    if not title or not notes:
+        return jsonify({"error": "title and notes are required"}), 400
+    cik = (body.get("cik") or "").strip() or None
+    if cik:
+        cik = cik.zfill(10)
+    accession = (body.get("accession") or "").strip() or None
+    row = lakebase.run_write(
+        """
+        INSERT INTO edgar.saved_research (user_id, company_cik, filing_id, title, notes)
+        VALUES (%(uid)s, %(cik)s, %(acc)s, %(title)s, %(notes)s)
+        RETURNING research_id
+        """,
+        {"uid": u["user_id"], "cik": cik, "acc": accession, "title": title, "notes": notes},
+    )
+    rid = row[0]["research_id"] if row else None
+    _log_ui_action(u["user_id"], "ui_create_research_note", {"title": title}, {"research_id": rid})
+    return jsonify({"research_id": rid, "title": title})
+
+
 # ---------------------------------------------------------------------------
 # JSON API — AI Research Assistant (in-process agent)
 # ---------------------------------------------------------------------------

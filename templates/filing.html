@@ -5,7 +5,17 @@
 <section class="pane">
   <h1 id="f-title">Filing {{ accession }}</h1>
   <p class="muted" id="f-meta"></p>
-  <p><a id="f-sec" target="_blank" rel="noopener">View source on SEC.gov ↗</a></p>
+  <div class="saverow">
+    <a id="f-sec" target="_blank" rel="noopener">View source on SEC.gov ↗</a>
+    <button type="button" id="f-save" class="ghost">☆ Save to workspace</button>
+    <button type="button" id="f-note-toggle" class="ghost">＋ Add note</button>
+  </div>
+  <form id="f-note-form" class="notebox" hidden>
+    <input id="f-note-title" placeholder="Note title" />
+    <textarea id="f-note-body" placeholder="What did you find in this filing?"></textarea>
+    <button type="submit">Save note</button>
+    <span class="muted" id="f-note-msg"></span>
+  </form>
 
   <div id="f-intel" class="intel" hidden>
     <div class="intel-head">
@@ -134,5 +144,40 @@ if (ACC) (async () => {
      `<span class="error">Failed to load filing: ${err.message}</span>`;
  }
 })();
+
+const fSave = document.getElementById('f-save');
+fSave.addEventListener('click', async () => {
+  fSave.disabled = true;
+  try {
+    await postJSON('/api/saved/filing', { accession: ACC });
+    fSave.textContent = '★ Saved — see My Workspace';
+  } catch (err) {
+    fSave.textContent = '☆ Save to workspace';
+    fSave.disabled = false;
+    alert('Could not save: ' + err.message);
+  }
+});
+
+const noteForm = document.getElementById('f-note-form');
+document.getElementById('f-note-toggle').addEventListener('click', () => {
+  noteForm.hidden = !noteForm.hidden;
+  if (!noteForm.hidden) document.getElementById('f-note-title').focus();
+});
+noteForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const title = document.getElementById('f-note-title').value.trim();
+  const body = document.getElementById('f-note-body').value.trim();
+  const msg = document.getElementById('f-note-msg');
+  if (!title || !body) { msg.textContent = 'title and text required'; return; }
+  try {
+    await postJSON('/api/saved/note', { title, notes: body, accession: ACC });
+    msg.textContent = 'saved ✓';
+    document.getElementById('f-note-title').value = '';
+    document.getElementById('f-note-body').value = '';
+    setTimeout(() => { noteForm.hidden = true; msg.textContent = ''; }, 1200);
+  } catch (err) {
+    msg.textContent = 'error: ' + err.message;
+  }
+});
 </script>
 {% endblock %}
