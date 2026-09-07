@@ -35,6 +35,7 @@
 
   <div id="tab-health">
     <div id="h-score"></div>
+    <div id="h-briefing"></div>
     <div id="h-scores" class="scoregrid"></div>
     <div id="h-valuation"></div>
     <div id="h-govins"></div>
@@ -138,6 +139,19 @@ async function loadHealth(cik) {
   const h = d.health;
   const note = document.getElementById('h-note');
   const wrap = document.getElementById('h-trends-wrap');
+
+  const bf = d.briefing;
+  document.getElementById('h-briefing').innerHTML = bf ? `
+    <div class="intel">
+      <div class="intel-head"><strong>Latest AI briefing</strong>
+        <span class="tone ${(bf.management_tone || '').toLowerCase()}">${bf.management_tone || ''}</span>
+        <span class="muted">${bf.form} · ${(bf.filing_date || '').slice(0, 10)}</span></div>
+      <p>${escapeHtml(bf.executive_summary || '')}</p>
+      ${bf.revenue_commentary ? `<p class="muted">${escapeHtml(bf.revenue_commentary)}</p>` : ''}
+      <div class="chips">${(bf.risk_themes || []).map(r => `<span class="chip">${escapeHtml(r)}</span>`).join('')}</div>
+      <p class="muted"><a href="/filing/${escapeHtml(bf.accession)}">open filing →</a></p>
+    </div>` : '';
+
   if (!h) {
     document.getElementById('h-score').innerHTML = '';
     document.getElementById('h-scores').innerHTML = '';

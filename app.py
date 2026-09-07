@@ -453,6 +453,16 @@ def api_health(cik):
         )
     except Exception:
         events = []
+    try:
+        briefing = warehouse.query(
+            f"""SELECT accession, form, filing_date, management_tone,
+                       executive_summary, revenue_commentary, risk_themes
+                FROM {T('gold_filing_intelligence')} WHERE cik = ?
+                ORDER BY filing_date DESC LIMIT 1""",
+            [cik],
+        )
+    except Exception:
+        briefing = []
     return jsonify({
         "health": h[0] if h else None,
         "ratios": ratios,
@@ -461,6 +471,7 @@ def api_health(cik):
         "insider": insider[0] if insider else None,
         "profile": profile[0] if profile else None,
         "events": events,
+        "briefing": briefing[0] if briefing else None,
     })
 
 
