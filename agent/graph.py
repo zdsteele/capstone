@@ -45,23 +45,37 @@ def _temperature_for(endpoint: str):
     return 0.1
 
 
+def _is_claude(endpoint: str) -> bool:
+    return "claude" in endpoint.lower()
+
+
 class AgentState(TypedDict):
     messages: Annotated[Sequence[AnyMessage], add_messages]
 
 
 def _make_chat(endpoint: str, temperature):
-    """ChatDatabricks, but with `temperature` (and `n`) stripped from the request
-    payload when `temperature is None` — Anthropic Claude / OpenAI gpt-5 endpoints
-    on Databricks serving reject an explicit temperature, and ChatDatabricks 0.4.0
-    hardcodes it into `_prepare_inputs`."""
+    """ChatDatabricks with two fixes for the pinned 0.4.0 line + Claude endpoints:
+
+    * `temperature` (and `n`) are stripped from the payload when `temperature is
+      None` — Claude / gpt-5 endpoints 400 on an explicit temperature and 0.4.0
+      hardcodes it into `_prepare_inputs`.
+    * Claude endpoints get `thinking: {type: disabled}`. Extended thinking is on
+      by default on databricks-claude-* and (a) langchain 0.3.x can't stream its
+      block format and (b) the thinking block round-trips broken through a
+      multi-turn tool loop → `400 each thinking block must contain thinking`.
+      A tool-routing agent doesn't need it. Override: LLM_THINKING=adaptive|off.
+    """
     from databricks_langchain import ChatDatabricks
 
-    class _Chat(ChatDatabricks):
-        _omit_sampling: bool = temperature is None
+    omit_sampling = temperature is None
+    extra: dict = {}
+    if _is_claude(endpoint) and os.environ.get("LLM_THINKING", "off").lower() != "adaptive":
+        extra["thinking"] = {"type": "disabled"}
 
+    class _Chat(ChatDatabricks):
         def _prepare_inputs(self, messages, stop=None, **kwargs):
             data = super()._prepare_inputs(messages, stop, **kwargs)
-            if self._omit_sampling:
+            if omit_sampling:
                 data.pop("temperature", None)
                 data.pop("n", None)
             return data
@@ -69,6 +83,8 @@ def _make_chat(endpoint: str, temperature):
     kwargs = {"endpoint": endpoint}
     if temperature is not None:
         kwargs["temperature"] = temperature
+    if extra:
+        kwargs["extra_params"] = extra
     return _Chat(**kwargs)
 
 
@@ -277,7 +293,16 @@ def run_agent_stream(history: list[dict], ctx: ToolContext):
                             if isinstance(m, ToolMessage):
                                 yield {"type": "tool_end", "name": m.name}
             elif mode == "messages":
-                msg_chunk = chunk[0] if isinstance(chunk, (list, tuple)) else chunk
+                if isinstance(chunk, (list, tuple)) and len(chunk) == 2:
+                    msg_chunk, meta = chunk
+                else:
+                    msg_chunk, meta = chunk, {}
+                # `messages` mode also carries ToolMessage payloads (the raw tool
+                # JSON) — those are not answer tokens.
+                if isinstance(msg_chunk, ToolMessage):
+                    continue
+                if (meta or {}).get("langgraph_node") not in (None, "agent"):
+                    continue
                 txt = _text_of(getattr(msg_chunk, "content", ""))
                 if txt:
                     yield {"type": "token", "text": txt}

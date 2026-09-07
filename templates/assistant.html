@@ -82,6 +82,105 @@ suggest.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () =>
   form.requestSubmit();
 }));
 
+const TOOL_LABELS = {
+  get_company_health: 'reading the health assessment',
+  screen_companies: 'screening all covered companies',
+  get_financial_ratios: 'pulling financial ratios',
+  get_financial_metric: 'pulling a metric series',
+  get_valuation: 'checking valuation multiples',
+  get_insider_activity: 'checking insider activity',
+  get_governance: 'reading the proxy',
+  get_business_profile: 'reading the business profile',
+  get_8k_events: 'scanning recent 8-K events',
+  get_filing_changes: 'diffing consecutive filings',
+  get_filing_intelligence: 'reading the AI briefing',
+  search_filing_text: 'searching filing text',
+  read_filing_section: 'reading a filing section',
+  search_filings: 'looking up filings',
+  search_company: 'looking up the company',
+  get_filing: 'opening the filing',
+  compare_companies: 'comparing companies',
+  get_saved_research: 'reading your notes',
+  save_filing: 'saving the filing',
+  save_company_to_watchlist: 'updating your watchlist',
+  create_research_note: 'writing a research note',
+  update_research_note: 'updating a research note',
+  remove_from_watchlist: 'updating your watchlist',
+};
+const toolLabel = n => TOOL_LABELS[n] || ('running ' + n);
+
+// live assistant bubble: a status line + a streaming-text region
+function liveBubble() {
+  const el = document.createElement('div');
+  el.className = 'bubble assistant';
+  const status = document.createElement('div');
+  status.className = 'agent-status';
+  status.textContent = 'thinking…';
+  const body = document.createElement('div');
+  body.className = 'agent-stream';
+  el.appendChild(status);
+  el.appendChild(body);
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return { el, status, body };
+}
+
+async function streamAnswer(text) {
+  const used = [];
+  let preview = '';
+  const lb = liveBubble();
+
+  const resp = await fetch('/api/assistant/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: text, history, conversation_id: conversationId }),
+  });
+  if (!resp.ok || !resp.body) throw new Error('stream unavailable (' + resp.status + ')');
+
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  let done = null;
+
+  while (true) {
+    const { value, done: fin } = await reader.read();
+    if (fin) break;
+    buf += dec.decode(value, { stream: true });
+    const parts = buf.split('\n\n');
+    buf = parts.pop();
+    for (const part of parts) {
+      const line = part.replace(/^data: /, '').trim();
+      if (!line) continue;
+      let ev;
+      try { ev = JSON.parse(line); } catch { continue; }
+      if (ev.type === 'conversation') {
+        conversationId = ev.conversation_id;
+      } else if (ev.type === 'tool_start') {
+        preview = '';
+        lb.body.textContent = '';
+        (ev.names || []).forEach(n => { if (!used.includes(n)) used.push(n); });
+        lb.status.textContent = (ev.names || []).map(toolLabel).join(' · ') + ' …';
+      } else if (ev.type === 'tool_end') {
+        lb.status.textContent = 'analyzing…';
+      } else if (ev.type === 'token') {
+        preview += ev.text;
+        lb.body.textContent = preview;
+        log.scrollTop = log.scrollHeight;
+      } else if (ev.type === 'error') {
+        throw new Error(ev.message || 'agent error');
+      } else if (ev.type === 'done') {
+        done = ev;
+      }
+    }
+  }
+  lb.el.remove();
+  if (!done) throw new Error('stream ended without a result');
+  bubble('assistant', done.reply || '(no reply)', done.tool_calls || used,
+         done.confidence, done.confidence_reason, done.sources);
+  history.push({ role: 'user', content: text });
+  history.push({ role: 'assistant', content: done.reply || '' });
+}
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = msg.value.trim();
@@ -90,20 +189,24 @@ form.addEventListener('submit', async (e) => {
   bubble('user', text);
   msg.value = '';
   document.getElementById('send').disabled = true;
-  bubble('assistant', '…');
-  const pending = log.lastChild;
   try {
-    const r = await postJSON('/api/assistant/message', {
-      message: text, history, conversation_id: conversationId,
-    });
-    conversationId = r.conversation_id;
-    pending.remove();
-    bubble('assistant', r.reply || '(no reply)', r.tool_calls, r.confidence, r.confidence_reason, r.sources);
-    history.push({ role: 'user', content: text });
-    history.push({ role: 'assistant', content: r.reply || '' });
+    await streamAnswer(text);
   } catch (err) {
-    pending.remove();
-    bubble('assistant', 'Error: ' + err.message);
+    // fall back to the non-streaming endpoint
+    try {
+      bubble('assistant', '…');
+      const pending = log.lastChild;
+      const r = await postJSON('/api/assistant/message', {
+        message: text, history, conversation_id: conversationId,
+      });
+      conversationId = r.conversation_id;
+      pending.remove();
+      bubble('assistant', r.reply || '(no reply)', r.tool_calls, r.confidence, r.confidence_reason, r.sources);
+      history.push({ role: 'user', content: text });
+      history.push({ role: 'assistant', content: r.reply || '' });
+    } catch (err2) {
+      bubble('assistant', 'Error: ' + err2.message);
+    }
   } finally {
     document.getElementById('send').disabled = false;
     msg.focus();

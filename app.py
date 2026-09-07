@@ -583,15 +583,15 @@ def api_saved():
 # JSON API — AI Research Assistant (in-process agent)
 # ---------------------------------------------------------------------------
 
-@app.route("/api/assistant/message", methods=["POST"])
-def api_assistant_message():
+def _assistant_setup(body):
+    """Shared prep for the assistant routes: resolve user + conversation, build
+    the ToolContext and the turn (history + new user message)."""
     u = _require_user()
-    body = request.get_json(silent=True) or {}
     message = (body.get("message") or "").strip()
     history = body.get("history") or []
     conversation_id = body.get("conversation_id")
     if not message:
-        return jsonify({"error": "message is required"}), 400
+        return None, None, None, None, (jsonify({"error": "message is required"}), 400)
 
     if not conversation_id:
         rows = lakebase.run_write(
@@ -600,7 +600,6 @@ def api_assistant_message():
         )
         conversation_id = rows[0]["conversation_id"]
 
-    from agent.graph import run_agent
     from agent.tools import ToolContext
 
     ctx = ToolContext(
@@ -612,46 +611,65 @@ def api_assistant_message():
     )
     turn = history + [{"role": "user", "content": message}]
     logger.info("assistant conv=%s prompt=%r", conversation_id, message[:200])
-    try:
-        result = run_agent(turn, ctx)
-    except Exception:
-        logger.exception("run_agent failed conv=%s", conversation_id)
-        raise
+    return u, conversation_id, ctx, (message, turn), None
+
+
+def _log_assistant_turn(conversation_id, user_id, message, result):
+    """Persist the final answer + confidence (feeds the usage-analytics CDF)."""
+    import json as _json
+
     logger.info(
         "assistant conv=%s tools=%s confidence=%s reply=%r",
         conversation_id, result.get("tool_calls"), result.get("confidence"),
         (result.get("reply") or "")[:200],
     )
+    try:
+        lakebase.run_write(
+            """
+            INSERT INTO edgar.agent_actions
+                (conversation_id, user_id, tool_name, tool_kind, args_json, status, confidence, result_json)
+            VALUES (%(conv)s, %(uid)s, 'final_answer', 'answer', %(args)s::jsonb, 'SUCCESS', %(conf)s, %(res)s::jsonb)
+            """,
+            {
+                "conv": conversation_id,
+                "uid": user_id,
+                "args": _json.dumps({"message": message}),
+                "conf": result.get("confidence"),
+                "res": _json.dumps({
+                    "tool_calls": result.get("tool_calls", []),
+                    "confidence_reason": result.get("confidence_reason"),
+                    "sources": result.get("sources", []),
+                }),
+            },
+        )
+        lakebase.run_write(
+            """
+            UPDATE edgar.agent_conversations
+               SET last_message_at = now(), message_count = message_count + 2
+             WHERE conversation_id = %s
+            """,
+            (conversation_id,),
+        )
+    except Exception:
+        logger.exception("failed to log assistant turn conv=%s", conversation_id)
 
-    # log the final answer + its self-reported confidence (feeds analytics)
-    import json as _json
 
-    lakebase.run_write(
-        """
-        INSERT INTO edgar.agent_actions
-            (conversation_id, user_id, tool_name, tool_kind, args_json, status, confidence, result_json)
-        VALUES (%(conv)s, %(uid)s, 'final_answer', 'answer', %(args)s::jsonb, 'SUCCESS', %(conf)s, %(res)s::jsonb)
-        """,
-        {
-            "conv": conversation_id,
-            "uid": u["user_id"],
-            "args": _json.dumps({"message": message}),
-            "conf": result.get("confidence"),
-            "res": _json.dumps({
-                "tool_calls": result["tool_calls"],
-                "confidence_reason": result.get("confidence_reason"),
-                "sources": result.get("sources", []),
-            }),
-        },
-    )
-    lakebase.run_write(
-        """
-        UPDATE edgar.agent_conversations
-           SET last_message_at = now(), message_count = message_count + 2
-         WHERE conversation_id = %s
-        """,
-        (conversation_id,),
-    )
+@app.route("/api/assistant/message", methods=["POST"])
+def api_assistant_message():
+    body = request.get_json(silent=True) or {}
+    u, conversation_id, ctx, payload, err = _assistant_setup(body)
+    if err:
+        return err
+    message, turn = payload
+
+    from agent.graph import run_agent
+
+    try:
+        result = run_agent(turn, ctx)
+    except Exception:
+        logger.exception("run_agent failed conv=%s", conversation_id)
+        raise
+    _log_assistant_turn(conversation_id, u["user_id"], message, result)
     return jsonify(
         {
             "conversation_id": conversation_id,
@@ -664,9 +682,48 @@ def api_assistant_message():
     )
 
 
+@app.route("/api/assistant/stream", methods=["POST"])
+def api_assistant_stream():
+    """Server-Sent Events version of /api/assistant/message. Emits, one per
+    `data:` line, JSON events: {type: tool_start|tool_end|token|done|error, ...}.
+    `done` carries the authoritative reply/confidence/tool_calls/sources."""
+    import json as _json
+
+    from flask import Response, stream_with_context
+
+    body = request.get_json(silent=True) or {}
+    u, conversation_id, ctx, payload, err = _assistant_setup(body)
+    if err:
+        return err
+    message, turn = payload
+
+    from agent.graph import run_agent_stream
+
+    def _gen():
+        yield f"data: {_json.dumps({'type': 'conversation', 'conversation_id': conversation_id})}\n\n"
+        final = None
+        try:
+            for ev in run_agent_stream(turn, ctx):
+                if ev.get("type") == "done":
+                    final = ev
+                yield f"data: {_json.dumps(ev)}\n\n"
+        except Exception as exc:  # pragma: no cover
+            logger.exception("run_agent_stream failed conv=%s", conversation_id)
+            yield f"data: {_json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+        if final:
+            _log_assistant_turn(conversation_id, u["user_id"], message, final)
+
+    return Response(
+        stream_with_context(_gen()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 if __name__ == "__main__":
     app.run(
         debug=bool(os.environ.get("FLASK_DEBUG")),
         host=os.environ.get("FLASK_RUN_HOST", "0.0.0.0"),
         port=int(os.environ.get("FLASK_RUN_PORT", "8000")),
+        threaded=True,  # so a streaming /api/assistant/stream doesn't block others
     )
