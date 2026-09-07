@@ -62,7 +62,11 @@ with open(dbutils.widgets.get("ciks_config")) as fh:
     COMPANIES = json.load(fh)["companies"]
 
 seen = set()
-if spark.catalog.tableExists(T("bronze_ownership_filings")):
+# Only trust the incremental skip-set when BOTH tables exist. If bronze exists
+# but silver doesn't, a prior run stored filings it couldn't parse (the XSL-path
+# bug) — clear `seen` so those accessions get re-fetched with the fixed path.
+if (spark.catalog.tableExists(T("bronze_ownership_filings"))
+        and spark.catalog.tableExists(T("silver_insider_transactions"))):
     seen = {r["accession"] for r in
             spark.table(T("bronze_ownership_filings")).select("accession").collect()}
 print(f"{len(COMPANIES)} companies, {len(seen):,} ownership filings already stored")
@@ -86,6 +90,7 @@ def _flush():
         else:
             df.createOrReplaceTempView("_stg_own")
             spark.sql(f"""MERGE INTO {fq} t USING _stg_own s ON t.accession = s.accession
+                          WHEN MATCHED THEN UPDATE SET *
                           WHEN NOT MATCHED THEN INSERT *""")
         merged["bronze_ownership_filings"] += len(raw_rows)
     if txn_rows:
@@ -121,6 +126,12 @@ for _i, co in enumerate(COMPANIES, 1):
         if new_here >= MAX_NEW:
             break
         primary = f.get("primaryDocument") or ""
+        # The submissions feed usually points primaryDocument at the XSL-rendered
+        # copy (e.g. "xslF345X05/wf-form4_123.xml") — fetching that path returns an
+        # HTML page, not the ownershipDocument XML, so parse_form4 gets nothing.
+        # The raw submitted XML sits in the accession root under the same basename.
+        if "/" in primary:
+            primary = primary.rsplit("/", 1)[-1]
         if not primary.lower().endswith(".xml"):
             continue
         new_here += 1
@@ -161,6 +172,22 @@ print("fetched:", merged, "skipped:", skipped)
 # COMMAND ----------
 
 # DBTITLE 1,gold_insider_activity — 180-day open-market rollup per company
+if not spark.catalog.tableExists(T("silver_insider_transactions")):
+    # No Forms 3/4/5 parsed this run (e.g. first run hit only stale filings, or
+    # every fetch failed). Write an empty gold table so downstream joins in
+    # company_health still resolve, and exit clean instead of failing the task.
+    _empty = spark.createDataFrame([], schema=(
+        "cik string, ticker string, buy_value_180d double, sell_value_180d double, "
+        "n_buyers_180d long, n_sellers_180d long, n_open_market_buys_180d long, "
+        "n_open_market_sells_180d long, largest_buy_180d double, latest_txn_date string, "
+        "net_value_180d double, signal string, name string, generated_at timestamp"))
+    _empty.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(
+        T("gold_insider_activity"))
+    print("no silver_insider_transactions — wrote empty gold_insider_activity")
+    dbutils.notebook.exit(json.dumps(
+        {"status": "no_transactions", "raw": merged, "gold_insider_activity": 0,
+         "skipped": skipped}))
+
 txns = spark.table(T("silver_insider_transactions")).withColumn(
     "filing_date", F.to_date("filing_date")
 ).filter(F.col("filing_date") >= F.date_sub(F.current_date(), 180))
