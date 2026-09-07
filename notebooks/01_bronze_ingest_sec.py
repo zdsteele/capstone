@@ -70,6 +70,9 @@ dbutils.widgets.text(
     "sec_user_agent",
     "EDGAR Intelligence Platform - Zach Steele zacharysteele8@gmail.com",
 )
+# SEC caps automated access at 10 req/s and 429s hard when the (shared, on a
+# bootcamp workspace) egress IP goes over. 5 leaves headroom for other traffic.
+dbutils.widgets.text("sec_requests_per_second", "5")
 
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
@@ -77,6 +80,7 @@ MODE = dbutils.widgets.get("mode")
 MAX_NEW = int(dbutils.widgets.get("max_new_filings_per_cik"))
 BATCH_SIZE = int(dbutils.widgets.get("batch_size"))
 USER_AGENT = dbutils.widgets.get("sec_user_agent")
+SEC_RPS = float(dbutils.widgets.get("sec_requests_per_second"))
 FULL = MODE == "full"
 
 with open(dbutils.widgets.get("ciks_config")) as fh:
@@ -116,7 +120,7 @@ print(f"{len(seen_accessions):,} filings already in bronze_filings"
 # COMMAND ----------
 
 # DBTITLE 1,Fetch (driver-sequential, rate-limited) — flushes to Delta every batch
-client = SecClient(user_agent=USER_AGENT, requests_per_second=8.0)
+client = SecClient(user_agent=USER_AGENT, requests_per_second=SEC_RPS)
 
 submission_rows, filing_rows, document_rows, facts_rows, text_rows = [], [], [], [], []
 skipped = 0

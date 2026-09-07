@@ -69,7 +69,7 @@ print(f"{len(COMPANIES)} companies, {len(seen)} proxies already stored")
 # COMMAND ----------
 
 # DBTITLE 1,Fetch the latest DEF 14A per company (comp section, batch-flushed)
-client = SecClient(user_agent=UA, requests_per_second=8.0)
+client = SecClient(user_agent=UA, requests_per_second=5.0)
 rows = []
 n_written, skipped, _i = 0, 0, 0
 

@@ -74,7 +74,7 @@ print(f"{len(COMPANIES)} companies, {len(seen):,} ownership filings already stor
 # COMMAND ----------
 
 # DBTITLE 1,Fetch Forms 3/4/5, parse ownership XML (batch-flushed)
-client = SecClient(user_agent=UA, requests_per_second=8.0)
+client = SecClient(user_agent=UA, requests_per_second=5.0)
 raw_rows, txn_rows = [], []
 merged = {"bronze_ownership_filings": 0, "silver_insider_transactions": 0}
 _i, skipped = 0, 0

@@ -82,10 +82,10 @@ class _TokenBucket:
 class SecClient:
     user_agent: str
     requests_per_second: float = 8.0
-    max_retries: int = 5
+    max_retries: int = 8
     timeout: int = 30
     backoff_base: float = 1.0
-    backoff_cap: float = 30.0
+    backoff_cap: float = 90.0
     _bucket: _TokenBucket = field(init=False, repr=False)
     _session: requests.Session = field(init=False, repr=False)
 
