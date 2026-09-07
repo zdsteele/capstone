@@ -24,9 +24,11 @@ env:
   - name: UC_SCHEMA
     value: "zdsteele_capstone"
 
-  # Foundation model for the in-process agent
+  # Foundation model for the in-process agent. Claude / gpt-5 endpoints reject an
+  # explicit temperature — agent/graph.py handles that. Set LLM_TEMPERATURE="" to
+  # force-omit sampling params for any endpoint.
   - name: LLM_ENDPOINT
-    value: "databricks-meta-llama-3-3-70b-instruct"
+    value: "databricks-claude-sonnet-5"
 
   # Vector Search — hybrid semantic retrieval over context-enriched filing chunks
   # (notebook 05). Blank both to fall back to keyword ILIKE.
