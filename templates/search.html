@@ -4,8 +4,11 @@
 {% block content %}
 <section class="pane">
   <h1>Companies</h1>
-  <p class="sub">Every company the platform has ingested from SEC EDGAR, ranked by its AI <strong>Investor Health Score</strong>. Click a row to open its dashboard.</p>
-  <input id="q" class="search" placeholder="Filter by name, ticker, or CIK…" autofocus />
+  <p class="sub">Every company the platform has ingested from SEC EDGAR, ranked by its AI <strong>Investor Health Score</strong>. Filter by sector or search, then click a row for its dashboard.</p>
+  <div class="filterrow">
+    <input id="q" class="search" placeholder="Filter by name, ticker, or CIK…" autofocus />
+    <select id="sector" class="search"><option value="">All sectors</option></select>
+  </div>
   <p class="muted" id="count" style="font-size:12px;margin:6px 2px 0"></p>
 </section>
 
@@ -17,6 +20,7 @@
 const listEl = document.getElementById('list');
 const countEl = document.getElementById('count');
 const q = document.getElementById('q');
+const sectorSel = document.getElementById('sector');
 let ALL = [];
 
 function scoreClass(label) {
@@ -35,36 +39,51 @@ function row(c) {
   return `<a class="corow" href="/dashboard?cik=${c.cik}">
     <span class="co-tkr">${c.ticker || ''}</span>
     <span class="co-name">${c.name || ''}</span>
-    <span class="co-sic muted">${c.sic_description || ''}</span>
+    <span class="co-sic muted">${c.sector || c.sic_description || ''}</span>
     ${c.overall_label ? `<span class="tone ${cls === 'pos' ? 'improving' : cls === 'neg' ? 'deteriorating' : 'stable'}">${c.overall_label}</span>` : '<span class="co-label muted">—</span>'}
     <span class="co-dir ${dir}" title="${c.direction || ''}">${arrow}</span>
     <span class="co-score ${s != null ? cls : 'muted'}">${s != null ? s : '·'}</span>
   </a>`;
 }
 
-function render(list) {
+function apply() {
+  const t = q.value.trim().toLowerCase();
+  const sec = sectorSel.value;
+  const list = ALL.filter(c => {
+    if (sec && (c.sector || '') !== sec) return false;
+    if (!t) return true;
+    return (c.ticker || '').toLowerCase().includes(t) ||
+           (c.name || '').toLowerCase().includes(t) ||
+           (c.cik || '').includes(t);
+  });
   listEl.innerHTML = list.length
     ? list.map(row).join('')
     : '<p class="muted" style="padding:12px 4px">No companies match.</p>';
-  countEl.textContent = `${list.length} of ${ALL.length} companies`;
+  const scored = list.filter(c => c.overall_score != null);
+  const avg = scored.length
+    ? Math.round(scored.reduce((a, c) => a + c.overall_score, 0) / scored.length) : null;
+  countEl.textContent = `${list.length} of ${ALL.length} companies`
+    + (sec ? ` · ${sec}` : '')
+    + (avg != null ? ` · avg score ${avg}` : '');
 }
 
 (async () => {
   try {
     const d = await getJSON('/api/companies');
     ALL = d.companies || [];
-    render(ALL);
+    const sectors = [...new Set(ALL.map(c => c.sector).filter(Boolean))].sort();
+    for (const s of sectors) {
+      const o = document.createElement('option');
+      o.value = o.textContent = s;
+      sectorSel.appendChild(o);
+    }
+    apply();
   } catch (err) {
     listEl.innerHTML = `<p class="error">Failed to load companies: ${err.message}</p>`;
   }
 })();
 
-q.addEventListener('input', debounce(() => {
-  const t = q.value.trim().toLowerCase();
-  render(!t ? ALL : ALL.filter(c =>
-    (c.ticker || '').toLowerCase().includes(t) ||
-    (c.name || '').toLowerCase().includes(t) ||
-    (c.cik || '').includes(t)));
-}, 150));
+q.addEventListener('input', debounce(apply, 150));
+sectorSel.addEventListener('change', apply);
 </script>
 {% endblock %}

@@ -117,6 +117,9 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .search { font-size: 15px; padding: 11px 14px; }
+.filterrow { display: flex; gap: 10px; flex-wrap: wrap; }
+.filterrow #q { flex: 1 1 260px; }
+.filterrow #sector { flex: 0 0 auto; min-width: 160px; }
 
 button, .btn {
   padding: 9px 16px;

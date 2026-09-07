@@ -248,12 +248,33 @@ def api_companies():
           FROM {T('silver_filings')} GROUP BY cik
         )
         SELECT c.cik, c.ticker, c.name, c.sic_description,
+               -- the LLM sector labels (notebook 08) drift; fold the strays into
+               -- the canonical buckets so the sector filter stays short.
+               CASE
+                 WHEN bp.sector IS NULL THEN NULL
+                 WHEN lower(bp.sector) RLIKE 'bank' THEN 'Banking'
+                 WHEN lower(bp.sector) RLIKE 'insur' THEN 'Insurance'
+                 WHEN lower(bp.sector) RLIKE 'financ|exchange' THEN 'Financials'
+                 WHEN lower(bp.sector) RLIKE 'reit|real estate' THEN 'REIT'
+                 WHEN lower(bp.sector) RLIKE 'semiconduct' THEN 'Semiconductors'
+                 WHEN lower(bp.sector) RLIKE 'saas|software' THEN 'SaaS'
+                 WHEN lower(bp.sector) RLIKE 'tech' THEN 'Technology'
+                 WHEN lower(bp.sector) RLIKE 'telecom|communication' THEN 'Telecom'
+                 WHEN lower(bp.sector) RLIKE 'media|entertain' THEN 'Media/Entertainment'
+                 WHEN lower(bp.sector) RLIKE 'health|pharma|biotech|life scien|medical' THEN 'Healthcare'
+                 WHEN lower(bp.sector) RLIKE 'energy|oil|gas' THEN 'Energy'
+                 WHEN lower(bp.sector) RLIKE 'util' THEN 'Utilities'
+                 WHEN lower(bp.sector) RLIKE 'industrial|manufactur' THEN 'Industrial'
+                 WHEN lower(bp.sector) RLIKE 'consumer|retail|commerce' THEN 'Consumer/Retail'
+                 ELSE 'Other'
+               END AS sector,
                coalesce(fc.filing_count, 0) AS filing_count,
                h.overall_score, h.overall_label, h.direction,
                h.primary_strength, h.primary_risk, h.key_metric_next_quarter
         FROM {T('silver_companies')} c
         LEFT JOIN fc ON fc.cik = c.cik
         LEFT JOIN {T('gold_company_health')} h ON h.cik = c.cik
+        LEFT JOIN {T('gold_business_profile')} bp ON bp.cik = c.cik
         ORDER BY h.overall_score DESC NULLS LAST, c.ticker
         """
     )
