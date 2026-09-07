@@ -56,7 +56,7 @@ def _setup_logging():
         root.addHandler(fh)
     # keep chatty third-party libraries out of the app log even in debug mode
     for noisy in ("databricks.sql", "databricks.sdk", "urllib3", "py4j",
-                  "mlflow", "httpx", "httpcore"):
+                  "mlflow", "httpx", "httpcore", "git", "git.cmd", "git.util"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     return log_path
 
