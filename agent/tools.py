@@ -431,6 +431,46 @@ def build_tools(ctx: ToolContext) -> list:
             return _rows_or_msg(rows, f"No insider activity for {company}.")
 
     @tool
+    def screen_insider_activity(signal: str | None = None, limit: int = 15) -> str:
+        """Screen ALL covered companies by their last-180-day insider-trading
+        signal — the universe-wide version of get_insider_activity. Use for
+        "which companies show insider cluster buying", "where are insiders
+        selling", "net insider buying across the platform".
+        `signal` filters (substring, case-insensitive) on the plain-English
+        signal: "cluster" (multiple insiders bought with personal capital),
+        "buying" (net open-market buying), "selling" (net open-market selling).
+        Omit `signal` to rank the whole universe by net open-market $ (buys
+        minus sells) over 180 days, biggest net buyers first."""
+        with record_action(
+            ctx, "screen_insider_activity", "retrieval",
+            {"signal": signal, "limit": limit},
+        ) as rec:
+            lim = min(int(limit), 50)
+            where, params = ["1=1"], []
+            if signal:
+                where.append("lower(signal) LIKE ?")
+                params.append(f"%{signal.strip().lower()}%")
+            order = ("net_value_180d DESC" if not signal
+                     else "buy_value_180d DESC" if "buy" in signal.lower() or "cluster" in signal.lower()
+                     else "sell_value_180d DESC")
+            rows = _wq(
+                f"""
+                SELECT ticker, name, signal, buy_value_180d, sell_value_180d,
+                       net_value_180d, n_buyers_180d, n_sellers_180d, largest_buy_180d,
+                       latest_txn_date
+                FROM {T('gold_insider_activity')}
+                WHERE {' AND '.join(where)}
+                ORDER BY {order} NULLS LAST
+                LIMIT {lim}
+                """,
+                params,
+            )
+            rec["result"] = rows
+            return _rows_or_msg(
+                rows, "No insider-activity rollups yet (run notebook 13)."
+            )
+
+    @tool
     def get_governance(company: str) -> str:
         """Executive compensation & board governance from the latest proxy
         (analyst spec §13): CEO/CFO total comp, whether pay is equity-heavy, the
@@ -751,7 +791,8 @@ def build_tools(ctx: ToolContext) -> list:
     return [
         search_company, search_filings, get_filing, get_filing_intelligence,
         screen_companies, get_business_profile, get_8k_events, get_filing_changes,
-        get_financial_ratios, get_valuation, get_insider_activity, get_governance,
+        get_financial_ratios, get_valuation, get_insider_activity,
+        screen_insider_activity, get_governance,
         get_company_health, get_financial_metric, compare_companies,
         search_filing_text, read_filing_section, get_saved_research,
         save_filing, save_company_to_watchlist, create_research_note,

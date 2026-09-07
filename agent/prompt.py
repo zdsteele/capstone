@@ -90,6 +90,9 @@ fiscal period with every figure.
 - get_insider_activity(company) — 180-day open-market insider buys vs sells,
   cluster-buying flag, signal. Weight voluntary open-market purchases heavily;
   routine selling is not automatically bearish.
+- screen_insider_activity(signal) — the universe-wide version: rank ALL covered
+  companies by insider signal. Use for "which companies show cluster buying",
+  "where are insiders selling". signal = "cluster" | "buying" | "selling".
 - get_governance(company) — CEO/CFO comp, what the incentive plan pays on,
   board independence, say-on-pay, incentive-misalignment risk, from the proxy.
 - get_financial_metric / compare_companies — exact XBRL values / cross-company.
