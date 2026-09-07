@@ -519,7 +519,7 @@ def api_dashboard(cik):
     revenue = warehouse.query(
         f"""
         SELECT fiscal_year, fiscal_period, period_end, revenue, yoy_pct, qoq_pct
-        FROM {T('gold_revenue_history')} WHERE cik = ? ORDER BY period_end
+        FROM {T('gold_revenue_history')} WHERE cik = ? ORDER BY period_end DESC
         """,
         [cik],
     )
@@ -528,7 +528,7 @@ def api_dashboard(cik):
         SELECT fiscal_year, fiscal_period, period_end, revenue, gross_profit,
                operating_income, net_income, total_assets, total_liabilities,
                stockholders_equity, operating_cash_flow, eps_diluted
-        FROM {T('gold_company_financials')} WHERE cik = ? ORDER BY period_end
+        FROM {T('gold_company_financials')} WHERE cik = ? ORDER BY period_end DESC
         """,
         [cik],
     )

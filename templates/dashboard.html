@@ -138,8 +138,8 @@ async function loadFinancials(cik) {
     </div>`;
   }).join('') || '<p class="muted">No quarterly revenue.</p>';
 
-  const fin = d.financials || [];
-  const last = fin[fin.length - 1] || {};
+  const fin = d.financials || [];   // newest-first from the API
+  const last = fin[0] || {};
   document.getElementById('d-latest').innerHTML = Object.entries({
     Revenue: last.revenue, 'Gross profit': last.gross_profit, 'Operating income': last.operating_income,
     'Net income': last.net_income, 'Total assets': last.total_assets, 'Total liabilities': last.total_liabilities,
