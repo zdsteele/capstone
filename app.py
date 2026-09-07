@@ -16,11 +16,14 @@ import os
 import re
 import time
 
-# Load .env for local dev BEFORE importing lib.* (they read os.environ at import).
+# Load .env BEFORE importing lib.* (they read os.environ at import). Local dev
+# uses ./.env; on Render a Secret File named ".env" is mounted at /etc/secrets/.
+# Real env vars already in the environment win (load_dotenv override=False).
 try:
     from dotenv import load_dotenv
 
     load_dotenv()
+    load_dotenv("/etc/secrets/.env")
 except Exception:
     pass
 
@@ -854,9 +857,12 @@ def api_assistant_stream():
 
 
 if __name__ == "__main__":
+    # Render (and most PaaS) inject $PORT; fall back to FLASK_RUN_PORT then 8000.
+    # This dev-server path is for local runs — in the container gunicorn serves it.
+    port = int(os.environ.get("PORT") or os.environ.get("FLASK_RUN_PORT") or "8000")
     app.run(
         debug=bool(os.environ.get("FLASK_DEBUG")),
         host=os.environ.get("FLASK_RUN_HOST", "0.0.0.0"),
-        port=int(os.environ.get("FLASK_RUN_PORT", "8000")),
+        port=port,
         threaded=True,  # so a streaming /api/assistant/stream doesn't block others
     )

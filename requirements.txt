@@ -1,6 +1,7 @@
 # Databricks App runtime + in-process agent.
 
 flask>=3.0.3
+gunicorn>=22.0.0          # prod WSGI server (Render / any container); dev uses flask run
 psycopg2-binary>=2.9.9
 databricks-sdk>=0.40.0
 databricks-sql-connector>=3.4.0

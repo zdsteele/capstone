@@ -1,0 +1,38 @@
+# Render Blueprint — deploys the EDGAR app as a Docker web service.
+# New → Blueprint → pick this repo, or it auto-applies on push once linked.
+#
+# Secrets live in the "edgar_app" Environment Group (Render dashboard →
+# Environment Groups). Put every var from .env.example there, OR paste the whole
+# file into that group's Secret File named ".env" (app.py loads /etc/secrets/.env).
+# Nothing secret is committed here.
+services:
+  - type: web
+    name: edgar-intelligence
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter          # free spins down after 15 min idle; starter ($7) stays warm
+    region: oregon
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - fromGroup: edgar_app
+      # non-secret defaults (override in the group if needed)
+      - key: UC_CATALOG
+        value: bootcamp_students
+      - key: UC_SCHEMA
+        value: zdsteele_capstone
+      - key: DATABRICKS_WAREHOUSE_ID
+        value: b15d3d6f837ba428
+      - key: LLM_ENDPOINT
+        value: databricks-claude-sonnet-5
+      - key: VS_ENDPOINT
+        value: zachy_vs
+      - key: VS_INDEX
+        value: bootcamp_students.zdsteele_capstone.filing_text_index
+      - key: EMBEDDING_ENDPOINT
+        value: databricks-gte-large-en
+      - key: LAKEBASE_SCHEMA
+        value: edgar
+      - key: FLASK_SECRET_KEY
+        generateValue: true

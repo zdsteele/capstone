@@ -1,0 +1,20 @@
+# never bake secrets or local cruft into the image
+.env
+.env.*
+!.env.example
+venv/
+.venv/
+logs/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+mlflow.db
+mlruns/
+agent/eval/report*.json
+.git/
+.github/
+CONTEXT.md
+notebooks/
+sql/
+project_proposal_documentations/

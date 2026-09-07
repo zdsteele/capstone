@@ -159,3 +159,26 @@ databricks apps deploy edgar-intelligence --source-code-path <bundle files path>
 `-t prod` arms the 06:30 schedule and binds Lakebase to the App with a rotated
 credential. The App itself must then be *started* (the `apps deploy` above, or
 the Deploy button on the app page) to get a live URL.
+
+## 9. Deploy the app to Render (alternative to Databricks Apps)
+
+The Flask app only *reads* Databricks (warehouse, model serving, vector search)
+and reads/writes Lakebase over the network — it runs anywhere. `Dockerfile` +
+`render.yaml` (a Blueprint) are in the repo.
+
+1. **Render → Environment Groups → New**, name it `edgar_app`. Either add each var
+   from `.env.example` as a variable, **or** paste the whole filled-in `.env` into
+   that group's **Secret File** named `.env` (mounted at `/etc/secrets/.env`,
+   which `app.py` loads). Must include `LAKEBASE_URL` (the native-password
+   `edgar_app` role — not the OAuth token), `DATABRICKS_HOST`,
+   `DATABRICKS_CLIENT_ID`, `DATABRICKS_CLIENT_SECRET`.
+2. **Render → New → Blueprint** → pick the `zdsteele/capstone` GitHub repo. It
+   reads `render.yaml`, creates the `edgar-intelligence` web service (Docker),
+   and links the `edgar_app` group. First build ~5–10 min (full `mlflow` +
+   langchain).
+3. Health check is `/healthz`. `autoDeploy` redeploys on every push to the
+   default branch.
+
+`plan: starter` ($7/mo) stays warm; `free` spins down after 15 min idle with a
+~30–60 s cold start. Nothing secret is in `render.yaml` or the image
+(`.dockerignore` excludes `.env`).
