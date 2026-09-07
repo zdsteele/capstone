@@ -149,10 +149,10 @@ async function streamAnswer(text) {
     const parts = buf.split('\n\n');
     buf = parts.pop();
     for (const part of parts) {
-      const line = part.replace(/^data: /, '').trim();
-      if (!line) continue;
+      const dataLine = part.split('\n').find(l => l.startsWith('data: '));
+      if (!dataLine) continue;
       let ev;
-      try { ev = JSON.parse(line); } catch { continue; }
+      try { ev = JSON.parse(dataLine.slice(6)); } catch { continue; }
       if (ev.type === 'conversation') {
         conversationId = ev.conversation_id;
       } else if (ev.type === 'tool_start') {
