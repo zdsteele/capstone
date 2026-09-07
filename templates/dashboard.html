@@ -39,6 +39,7 @@
     <div id="h-valuation"></div>
     <div id="h-govins"></div>
     <div class="tbl" id="h-trends-wrap"><table id="h-trends" class="grid"></table></div>
+    <div id="h-events"></div>
     <div id="h-report"></div>
     <p class="muted" id="h-note"></p>
   </div>
@@ -242,6 +243,17 @@ async function loadHealth(cik) {
       <td>${r.current_ratio == null ? '—' : Number(r.current_ratio).toFixed(2)} ${tmark(r.current_ratio_trend)}</td>
       <td>${r.ccc == null ? '—' : Math.round(r.ccc) + 'd'} ${tmark(r.ccc_trend)}</td>
       <td>${r.fcf_payout == null ? '—' : Math.round(r.fcf_payout * 100) + '%'} ${tmark(r.fcf_payout_trend)}</td></tr>`).join('') + '</tbody>';
+
+  const ev = d.events || [];
+  document.getElementById('h-events').innerHTML = ev.length ? (
+    `<h3>Material events <span class="muted" style="text-transform:none;letter-spacing:0">— 8-K filings</span></h3>
+     <ul class="events">` +
+    ev.map(e => `<li>
+        <span class="muted">${(e.filing_date || '').slice(0, 10)}</span>
+        <span class="chip mat-${escapeHtml(e.materiality || 'low')}">${escapeHtml(e.event_type || 'other')}</span>
+        <a href="/filing/${escapeHtml(e.accession)}">${escapeHtml(e.event_summary || '')}</a>
+      </li>`).join('') + '</ul>'
+  ) : '';
 
   const sec = (t, v) => v ? `<h3>${t}</h3><div class="report">${mdInline(v)}</div>` : '';
   const list = (t, arr) => (arr && arr.length)

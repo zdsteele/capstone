@@ -311,6 +311,21 @@ a.src:hover { border-color: var(--accent); color: var(--accent-ink); background:
 button.chip { font-weight: 500; cursor: pointer; }
 button.chip:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
 
+/* material-events timeline (dashboard health tab) */
+ul.events { list-style: none; padding: 0; margin: 8px 0 4px; }
+ul.events li {
+  display: flex; gap: 10px; align-items: baseline;
+  padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px;
+}
+ul.events li:last-child { border-bottom: 0; }
+ul.events .muted { flex: 0 0 82px; font-variant-numeric: tabular-nums; }
+ul.events .chip { flex: 0 0 auto; text-transform: capitalize; }
+ul.events a { color: var(--ink); text-decoration: none; }
+ul.events a:hover { text-decoration: underline; }
+.chip.mat-high { background: var(--neg-soft); border-color: var(--neg); color: var(--neg); }
+.chip.mat-medium { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
+.chip.mat-low { background: var(--panel); border-color: var(--line); color: var(--ink-2); }
+
 /* research-assistant example prompts */
 .suggest { margin: 2px 0 16px; }
 .suggest .lbl {
