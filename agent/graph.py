@@ -207,6 +207,11 @@ def _extract_sources(out_msgs) -> list[dict]:
 
 
 def _enable_mlflow():
+    """Opt-in LangChain tracing. Off by default: `autolog()` spins up a local
+    SQLite tracking store (`mlflow.db`) and shells out to git on every turn,
+    which is pure overhead on a small deploy. Set MLFLOW_TRACING=1 to enable."""
+    if os.environ.get("MLFLOW_TRACING", "").lower() not in ("1", "true", "yes"):
+        return
     try:
         import mlflow
 
