@@ -15,14 +15,13 @@ WORKDIR /app
 
 # deps first for layer caching. --use-deprecated=legacy-resolver: the pinned
 # langchain 0.3 line stalls pip's new resolver (see requirements.txt).
-# Then swap mlflow(full) + pyarrow for mlflow-skinny: databricks-langchain only
-# imports `mlflow.deployments` (present in skinny), and dropping the two saves
-# ~450MB RSS — the difference between fitting a 512MB instance and OOMing.
+# The full stack (mlflow + langchain + pandas + pyarrow + sklearn ...) needs
+# ~600-800MB resident for one worker — run this on a 2GB instance (render.yaml
+# plan: standard). Trimming mlflow->skinny was tried and fights
+# databricks-langchain's conflicting unitycatalog deps; not worth it.
 COPY requirements.txt .
 RUN pip install --use-deprecated=legacy-resolver -r requirements.txt \
- && pip uninstall -y mlflow pyarrow \
- && pip install --no-deps "mlflow-skinny>=2.20,<4" \
- && python -c "from mlflow.deployments import BaseDeploymentClient; from databricks_langchain import ChatDatabricks; print('import check OK')"
+ && python -c "from databricks_langchain import ChatDatabricks; print('import check OK')"
 
 COPY . .
 

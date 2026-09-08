@@ -17,8 +17,9 @@ langchain>=0.3.20,<0.4
 langchain-core>=0.3.33,<0.4
 langgraph>=0.3,<0.4
 mlflow>=2.20.1,<4          # hard dep of databricks-langchain (needs mlflow.deployments).
-                          # The Dockerfile swaps this for mlflow-skinny + drops pyarrow
-                          # to fit a 512MB instance; tracing (mlflow.langchain) is optional.
+                          # Pulls a large tree (sklearn/scipy/matplotlib/pyarrow) — the
+                          # deployed container wants a 2GB instance. Tracing is opt-in
+                          # (MLFLOW_TRACING=1); see agent/graph._enable_mlflow.
 
 # Filing parsing — used by the Spark notebooks; lib/edgar_parse imports these
 # lazily so the app process doesn't load them.

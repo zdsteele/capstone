@@ -11,10 +11,13 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    plan: starter          # free spins down after 15 min idle; starter ($7) stays warm
+    plan: standard         # 2GB — the mlflow+langchain+pandas+pyarrow stack OOMs
+                           # 512MB (starter/free). Downgrade to `starter` after
+                           # grading if you want; it may cold-restart under load.
     region: oregon
     healthCheckPath: /healthz
-    autoDeploy: true
+    autoDeploy: false       # deploy manually (Render dashboard → Manual Deploy).
+                            # flip to true to redeploy on every push to main.
     envVars:
       - fromGroup: edgar_app
       # non-secret defaults (override in the group if needed)
