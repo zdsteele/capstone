@@ -1,0 +1,7 @@
+{
+  "_comment": "PILOT scope for notebooks 15/17 (fast local/dev runs before pointing at the full config/13f_managers.json). Berkshire for a concentrated, easy-to-eyeball correctness check (large, well-known public AAPL position); Vanguard for breadth (a diversified index manager holds nearly every S&P 500 constituent, exercising the CUSIP-mapping step against many issuers in one pass).",
+  "managers": [
+    { "manager_cik": "0001067983", "manager_name": "Berkshire Hathaway Inc" },
+    { "manager_cik": "0000102909", "manager_name": "Vanguard Group Inc" }
+  ]
+}

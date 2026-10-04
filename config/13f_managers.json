@@ -1,0 +1,24 @@
+{
+  "_comment": "Form 13F-HR institutional-manager universe (NOT issuer CIKs — these file quarterly holdings reports about OTHER companies, unlike config/ciks_full.json). Every CIK below was verified live against data.sec.gov/submissions/CIK{cik}.json to confirm it is the correct entity name and has a recent (2026) 13F-HR filing, not a stale/inactive registration or a '13F-NT' notice-only sub-entity that reports combined elsewhere. See docs/PIPELINE.md for the lookup method (EDGAR full-text search, https://efts.sec.gov/LATEST/search-index) used when a manager's obvious holding-company CIK turned out to be notice-only.",
+  "managers": [
+    { "manager_cik": "0001067983", "manager_name": "Berkshire Hathaway Inc" },
+    { "manager_cik": "0000102909", "manager_name": "Vanguard Group Inc" },
+    { "manager_cik": "0002012383", "manager_name": "BlackRock, Inc." },
+    { "manager_cik": "0000093751", "manager_name": "State Street Corp" },
+    { "manager_cik": "0000315066", "manager_name": "FMR LLC" },
+    { "manager_cik": "0001214717", "manager_name": "Geode Capital Management, LLC" },
+    { "manager_cik": "0000073124", "manager_name": "Northern Trust Corp" },
+    { "manager_cik": "0001422849", "manager_name": "Capital World Investors" },
+    { "manager_cik": "0000895421", "manager_name": "Morgan Stanley" },
+    { "manager_cik": "0000019617", "manager_name": "JPMorgan Chase & Co" },
+    { "manager_cik": "0000070858", "manager_name": "Bank of America Corp" },
+    { "manager_cik": "0000902219", "manager_name": "Wellington Management Group LLP" },
+    { "manager_cik": "0000914208", "manager_name": "Invesco Ltd" },
+    { "manager_cik": "0000080255", "manager_name": "T Rowe Price Associates Inc" },
+    { "manager_cik": "0000886982", "manager_name": "Goldman Sachs Group Inc" },
+    { "manager_cik": "0000884546", "manager_name": "Charles Schwab Investment Management Inc" },
+    { "manager_cik": "0001390777", "manager_name": "Bank of New York Mellon Corp" },
+    { "manager_cik": "0001610520", "manager_name": "UBS Group AG" },
+    { "manager_cik": "0001374170", "manager_name": "Norges Bank" }
+  ]
+}

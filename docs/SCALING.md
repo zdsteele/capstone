@@ -9,9 +9,18 @@ capstone's **Volume V (>1M rows)** with large margin.
 - EDGAR has **~800k filers** (mostly funds, shells, defunct). SEC caps automated
   access at **10 req/s** — a single request each is ~22 hours; with filing
   documents it's weeks. Most have no usable XBRL.
-- **Ownership / registration forms** (3/4/5, 13D/G/F, S-1, 424B) are tens of
-  millions of filings that the section parser, XBRL flattener, and AI briefing
-  can't process. Ingesting them adds cost and zero analytical value here.
+- **Ownership / registration forms** (3/4/5, 13D/G/F, S-1, 424B) were
+  originally all out of scope here — across all ~800k EDGAR filers they're
+  tens of millions of filings the section parser, XBRL flattener, and AI
+  briefing can't process. That's since been partially superseded: 3/4/5
+  (nb 13), DEF 14A (nb 14), and 13D/13G/13F (nb 16/17) are now ingested —
+  on a **bounded** axis, which is exactly what avoids the original cost
+  concern. 3/4/5, 13D/13G, and DEF 14A are CIK-driven over the same ~470-
+  company tracked universe, not all 800k filers; 13F is driven off a small
+  curated list of ~20 institutional managers (`config/13f_managers.json`),
+  not all 13F filers. Form 144, S-1, and 424B remain genuinely out of scope
+  — none of them has a bounded, analytically valuable CIK axis the way the
+  ones above do.
 
 The scaled set is **~470 large operating companies**, forms **10-K / 10-Q / 8-K
 + 20-F / 40-F / 6-K** (foreign-filer equivalents). That's the standard target

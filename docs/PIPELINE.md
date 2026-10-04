@@ -15,11 +15,13 @@ notebook triggers the next. Automation happens only inside two Asset-Bundle jobs
 
 | Job | Notebooks | Trigger | What it does |
 |---|---|---|---|
-| `pipeline_daily_refresh` | 01 → 02 → 03 → 04 → 05 → 08 → 09 → 10 | schedule (06:30 America/New_York) or manual | pull new SEC + market data, rebuild silver/gold + the AI layer |
+| `pipeline_daily_refresh` | 01 → 02 → 03 → 04 → 05 → 08 → 12 → 09 → 11 → 13 → 14 → 16 → 17 → 10 | schedule (06:30 America/New_York) or manual | pull new SEC + market data, rebuild silver/gold + the AI layer |
 | `analytics_cdf_on_change` | 06 only | fires when a `lb_*_history` table changes | turn app/agent activity into usage analytics |
 
 Notebook **07** is in neither — run it by hand whenever you want to (re)tag
-tables in Unity Catalog.
+tables in Unity Catalog. Notebook **15** (CUSIP → CIK mapping seed, supports
+13F in notebook 17) is also run by hand, not scheduled — see §12b below for
+when to re-run it.
 
 **The daily pipeline never reads an app table.** The only place app data
 re-enters the lakehouse is job #2 (notebook 06). Details in §7.
@@ -62,11 +64,12 @@ scope.
 | **10-K** | **Annual report** — full audited financials, business description, risk factors, MD&A | ✅ | the backbone: yearly financials + the narrative the AI layer reads |
 | **10-Q** | **Quarterly report** — unaudited financials + MD&A, lighter than a 10-K | ✅ | quarterly trend data + fresher narrative |
 | **8-K** | **"Current report"** — a material event between quarters (earnings release, exec change, acquisition, big contract) | ✅ | filing-activity signal; event timeline |
-| DEF 14A | **Proxy statement** — exec pay, board, shareholder-vote items | ❌ | needed for the analyst spec's governance section (§13) — not ingested yet |
-| Forms 3 / 4 / 5 | **Insider transactions** — an officer/director/10%-owner buying or selling stock | ❌ | analyst spec §11; not ingested |
+| DEF 14A | **Proxy statement** — exec pay, board, shareholder-vote items | ✅ | nb 14, standalone — analyst spec §13 |
+| Forms 3 / 4 / 5 | **Insider transactions** — an officer/director/10%-owner buying or selling stock | ✅ | nb 13, standalone — analyst spec §11 |
 | Form 144 | Notice of a planned insider sale | ❌ | §11; not ingested |
-| 13D / 13G | A >5% shareholder disclosing a stake (13D = activist, 13G = passive) | ❌ | §12; not ingested |
-| 13F | A big institution's quarterly holdings list | ❌ | §12; not ingested |
+| 13D / 13G | A >5% shareholder disclosing a stake (13D = activist, 13G = passive) | ✅ | nb 16, standalone, issuer-CIK-driven — analyst spec §12a |
+| 13F | A big institution's quarterly holdings list | ✅ | nb 17, standalone, **manager-CIK-driven** (a separate ingestion axis — see §12b below) — analyst spec §12b |
+| 13H | Large-trader self-registration (who the trader is, not what they hold) | ❌ | no issuer/CUSIP/share data — can't answer an ownership question, deliberately not ingested |
 | S-1 | **IPO registration** — first-time public offering | ❌ | our companies are long public |
 | 424B | Prospectus (final offering terms) | ❌ | out of scope |
 | 20-F / 6-K | Annual / interim reports for **foreign** filers (instead of 10-K/10-Q) | ❌ | pilot is all US filers |
@@ -233,6 +236,61 @@ leaves `config/ciks.json`.
   report); the agent's `get_company_health` tool.
 - **Why needed:** the headline "is this company healthy, improving or
   deteriorating, what to watch" answer — the product's whole point.
+
+### 11, 12, 13, 14 · Ratios/valuation refinement, filing diffs, insider activity, governance
+
+Also in the daily job (own-fetch notebooks, each standalone and independently
+rerunnable): **11** `11_valuation.py` (market cap/EV/multiples from yfinance ×
+XBRL), **12** `12_filing_diffs.py` (`gold_filing_language_changes` — what
+changed between a company's consecutive 10-K/10-Q filings), **13**
+`13_insider_activity.py` (Forms 3/4/5 → `gold_insider_activity`, analyst spec
+§11), **14** `14_governance.py` (DEF 14A → `gold_governance`, analyst spec
+§13). 13 and 14 fetch their *own* form types (not 10-K/10-Q/8-K), so they run
+in parallel to the bronze/silver/gold chain rather than depending on it.
+
+### 15, 16, 17 · Institutional / beneficial ownership (13D / 13G / 13F) — analyst spec §12
+
+**16** `16_institutional_13dg.py` and **17** `17_institutional_13f.py` are both
+in the daily job; **15** `15_cusip_mapping_seed.py` is **not** — run it by
+hand (or add your own `databricks bundle run` cron outside this job) whenever
+`config/13f_managers.json` or `config/cusip_overrides.json` changes.
+
+**Two genuinely different ingestion axes, not one:**
+- **13D/13G (nb 16)** are filed *by a holder about an issuer* — same
+  issuer-CIK-driven fetch as 13/14 above (`config/ciks_full.json`). Each
+  filing's cover page is parsed by `lib.edgar_parse.parse_13dg_cover`, which
+  tries a structured XML cover page first and falls back to regex over the
+  plain-text filing — 13D/13G filings don't share one universal clean XML
+  schema the way Form 4 does. → `silver_beneficial_ownership_stakes` →
+  `gold_beneficial_ownership`.
+- **13F (nb 17)** is filed *by an institutional manager* listing holdings
+  across many issuers, so it cannot be driven off the issuer-CIK list at
+  all — it iterates `config/13f_managers.json` (a curated list of large
+  managers, each CIK verified live against EDGAR, not guessed) instead. Each
+  manager's latest 13F-HR information table is parsed by
+  `lib.edgar_parse.parse_13f_infotable` into one row per `(manager, CUSIP)`
+  holding. The catch: **a 13F holding is keyed by CUSIP, not CIK or
+  ticker**, and the free SEC JSON APIs this project otherwise uses don't
+  expose a CUSIP → CIK mapping — so nb 17 resolves each CUSIP through
+  `silver_cusip_mapping` (built by nb 15: fuzzy-matches each 13F issuer name,
+  after `lib.edgar_parse.normalize_company_name` strips legal-entity/
+  share-class noise like "INC"/"CORP"/"CLASS A", against `silver_companies`
+  via `difflib`, with a `match_score`/`confident` flag and a manual-override
+  escape hatch in `config/cusip_overrides.json`). Holdings whose CUSIP isn't
+  confidently resolved are still written (visible via `WHERE cik IS NULL`),
+  not silently dropped — `gold_institutional_ownership`'s quarter-over-quarter
+  new/increased/decreased/exited status is computed via a window-rank +
+  full-outer-join on `(manager, CUSIP)` (a plain `lag()` can't see exits — an
+  exited position has no current-quarter row to lag into).
+- **13H deliberately excluded** — it's a Rule 13h-1 large-trader
+  self-registration (who the trader is, for market-surveillance purposes),
+  not a holdings disclosure; it has no issuer/CUSIP/share fields at all.
+
+Neither 16 nor 17 feeds `gold_company_health` (nb 10) in this pass — they're
+a standalone dashboard panel (`app.py` `/api/health/<cik>` +
+`templates/dashboard.html`'s "Institutional ownership" / "Beneficial
+ownership" panel) and two new agent tools (`get_institutional_ownership`,
+`screen_institutional_ownership`), not yet a health-score input.
 
 ---
 

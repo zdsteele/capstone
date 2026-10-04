@@ -213,6 +213,35 @@ print("usage marts rebuilt")
 
 # COMMAND ----------
 
+# DBTITLE 1,gold_pipeline_monitor — per-source freshness + measured CDF lag
+monitor = (
+    events.groupBy("source_table")
+    .agg(
+        F.count("*").alias("total_events"),
+        F.max("event_ts").alias("last_event_at"),
+        F.max("ingested_at").alias("last_ingested_at"),
+        F.round(
+            F.avg(F.unix_timestamp("ingested_at") - F.unix_timestamp("event_ts")), 1
+        ).alias("avg_lag_seconds"),
+        F.round(
+            F.percentile_approx(
+                F.unix_timestamp("ingested_at") - F.unix_timestamp("event_ts"), 0.95
+            ),
+            1,
+        ).alias("p95_lag_seconds"),
+        F.sum(
+            F.when(F.col("event_ts") >= F.current_timestamp() - F.expr("INTERVAL 24 HOURS"), 1).otherwise(0)
+        ).alias("events_last_24h"),
+    )
+    .withColumn("generated_at", F.current_timestamp())
+)
+monitor.write.format("delta").mode("overwrite").option(
+    "overwriteSchema", "true"
+).saveAsTable(T("gold_pipeline_monitor"))
+print("gold_pipeline_monitor:", monitor.count())
+
+# COMMAND ----------
+
 dbutils.notebook.exit(
     json.dumps({"status": "ok", "new_events": processed, "total_events": events.count()})
 )

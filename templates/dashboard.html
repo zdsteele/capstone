@@ -40,6 +40,7 @@
     <div id="h-scores" class="scoregrid"></div>
     <div id="h-valuation"></div>
     <div id="h-govins"></div>
+    <div id="h-ownership"></div>
     <div class="tbl" id="h-trends-wrap"><table id="h-trends" class="grid"></table></div>
     <div id="h-events"></div>
     <div id="h-report"></div>
@@ -107,6 +108,7 @@ async function refreshWatchBtn(cik) {
 }
 watchBtn.addEventListener('click', async () => {
   if (!currentCik) return;
+  if (watchBtn.dataset.on === '1' && !confirm('Remove this company from your watchlist?')) return;
   watchBtn.disabled = true;
   try {
     const r = await postJSON('/api/watchlist/toggle', { cik: currentCik });
@@ -295,6 +297,22 @@ async function loadHealth(cik) {
         <a href="/filing/${escapeHtml(e.accession)}">${escapeHtml(e.event_summary || '')}</a>
       </li>`).join('') + '</ul>'
   ) : '';
+
+  const inst = d.institutional || [], benef = d.beneficial_ownership || [];
+  const statusCls = s => (s === 'increased' || s === 'new') ? 'pos' : (s === 'decreased' || s === 'exited') ? 'neg' : 'muted';
+  let ownHtml = '';
+  if (inst.length) {
+    ownHtml += `<h3>Institutional ownership <span class="muted" style="text-transform:none;letter-spacing:0">— 13F, latest quarter</span></h3>
+      <table class="kv">` + inst.map(r => `<tr><th>${escapeHtml(r.manager_name || '')}</th>
+        <td>${fmtUSD(r.value_usd)} <span class="${statusCls(r.status)}">${escapeHtml(r.status || '')}</span>
+        ${r.pct_change != null ? ' (' + (r.pct_change * 100).toFixed(0) + '%)' : ''}</td></tr>`).join('') + '</table>';
+  }
+  if (benef.length) {
+    ownHtml += `<h3>Beneficial ownership <span class="muted" style="text-transform:none;letter-spacing:0">— 13D/13G, 5%+ stakes</span></h3>
+      <div class="chips">` + benef.map(r => `<span class="chip">${escapeHtml(r.filer_name || '')} · ${r.pct_of_class != null ? Number(r.pct_of_class).toFixed(1) : '—'}%
+        ${r.is_activist ? '(13D — activist)' : '(13G — passive)'}</span>`).join('') + '</div>';
+  }
+  document.getElementById('h-ownership').innerHTML = ownHtml;
 
   const sec = (t, v) => v ? `<h3>${t}</h3><div class="report">${mdInline(v)}</div>` : '';
   const list = (t, arr) => (arr && arr.length)

@@ -202,6 +202,41 @@ resources:
           max_retries: 2
           min_retry_interval_millis: 120000
 
+        # Institutional / beneficial ownership (13D/13G/13F) — analyst spec
+        # §12. Deliberately NOT a company_health input yet (separate dashboard
+        # panel only, see notebooks 15-17 for why). 13D/13G reuse the CIK-driven
+        # fetch (own-fetch, same shape as insider_activity above); 13F runs on
+        # its own manager-CIK axis — notebook 15 (CUSIP mapping) is standalone
+        # and intentionally NOT a task here, see docs/PIPELINE.md for its
+        # manual-run trigger.
+        - task_key: institutional_13dg
+          depends_on:
+            - task_key: silver          # needs silver_companies for the name join
+          notebook_task:
+            notebook_path: ./notebooks/16_institutional_13dg.py
+            base_parameters:
+              catalog: "${var.catalog}"
+              schema: "${var.schema}"
+              ciks_config: "${var.ciks_config}"
+              mode: incremental
+          timeout_seconds: 86400
+          max_retries: 2
+          min_retry_interval_millis: 120000
+
+        - task_key: institutional_13f
+          depends_on:
+            - task_key: silver          # needs silver_companies for silver_cusip_mapping join
+          notebook_task:
+            notebook_path: ./notebooks/17_institutional_13f.py
+            base_parameters:
+              catalog: "${var.catalog}"
+              schema: "${var.schema}"
+              managers_config: "../config/13f_managers.json"
+              mode: incremental
+          timeout_seconds: 86400
+          max_retries: 2
+          min_retry_interval_millis: 120000
+
         - task_key: company_health
           depends_on:
             - task_key: filing_intelligence

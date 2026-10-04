@@ -26,6 +26,7 @@
 # COMMAND ----------
 
 # DBTITLE 1,Setup
+import datetime as dt
 import json
 import os
 import sys
@@ -52,6 +53,7 @@ dbutils.widgets.text("shuffle_partitions", "200")   # bump for the full universe
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 T = lambda name: f"{CATALOG}.{SCHEMA}.{name}"
+DQ_METRICS = []
 
 try:  # serverless auto-tunes shuffle; harmless if it rejects the set
     spark.conf.set("spark.sql.shuffle.partitions", dbutils.widgets.get("shuffle_partitions"))
@@ -87,7 +89,7 @@ print("silver_companies:", silver_companies.count())
 
 # DBTITLE 1,silver_filings
 filings = spark.table(T("bronze_filings"))
-silver_filings = (
+filings_typed = (
     filings.withColumn("cik", F.lpad(F.col("cik"), 10, "0"))
     .withColumn("filing_date", F.to_date("filing_date"))
     .withColumn("report_date", F.to_date("report_date"))
@@ -102,13 +104,29 @@ silver_filings = (
             F.col("primary_document"),
         ),
     )
-    .dropDuplicates(["accession"])
-    .filter(F.col("cik").isNotNull() & F.col("accession").isNotNull())
 )
+_filing_ok = F.col("cik").isNotNull() & F.col("accession").isNotNull()
+filings_quarantine = (
+    filings_typed.filter(~_filing_ok)
+    .withColumn("reject_reason", F.when(F.col("cik").isNull(), "null_cik").otherwise("null_accession"))
+    .withColumn("quarantined_at", F.current_timestamp())
+)
+filings_valid = filings_typed.filter(_filing_ok)
+filings_valid_n = filings_valid.count()
+silver_filings = filings_valid.dropDuplicates(["accession"])
 silver_filings.write.format("delta").mode("overwrite").option(
     "overwriteSchema", "true"
 ).saveAsTable(T("silver_filings"))
-print("silver_filings:", silver_filings.count())
+filings_quarantine.write.format("delta").mode("overwrite").option(
+    "overwriteSchema", "true"
+).saveAsTable(T("quarantine_filings"))
+DQ_METRICS.append(dict(
+    table_name="silver_filings", rows_out=silver_filings.count(),
+    rows_quarantined=filings_quarantine.count(),
+    duplicates_removed=filings_valid_n - spark.table(T("silver_filings")).count(),
+))
+print("silver_filings:", spark.table(T("silver_filings")).count(),
+      "quarantined:", DQ_METRICS[-1]["rows_quarantined"])
 
 # COMMAND ----------
 
@@ -161,7 +179,7 @@ facts_raw = (
 # the ~12 recent filings we download docs for) threw away the whole pre-2025
 # history — 683k rows, 90% from 2025-26. Keeping the full history is what clears
 # the Volume V (~8-12M rows at 474 companies).
-silver_financial_facts = (
+facts_typed = (
     facts_raw.withColumn("period_start", F.to_date("period_start"))
     .withColumn("period_end", F.to_date("period_end"))
     .withColumn(
@@ -182,11 +200,26 @@ silver_financial_facts = (
         .when(F.col("duration_days") <= 300, F.lit("ytd9"))
         .otherwise(F.lit("annual")),
     )
-    .filter(
-        F.col("cik").isNotNull() & F.col("period_end").isNotNull()
-        & F.col("value").isNotNull() & F.col("accession").isNotNull()
+)
+_fact_ok = (
+    F.col("cik").isNotNull() & F.col("period_end").isNotNull()
+    & F.col("value").isNotNull() & F.col("accession").isNotNull()
+)
+facts_quarantine = (
+    facts_typed.filter(~_fact_ok)
+    .withColumn(
+        "reject_reason",
+        F.when(F.col("cik").isNull(), "null_cik")
+        .when(F.col("period_end").isNull(), "null_period_end")
+        .when(F.col("value").isNull(), "null_value")
+        .otherwise("null_accession"),
     )
-    .dropDuplicates(["cik", "accession", "taxonomy", "concept", "unit", "period_start", "period_end"])
+    .withColumn("quarantined_at", F.current_timestamp())
+)
+facts_valid = facts_typed.filter(_fact_ok)
+facts_valid_n = facts_valid.count()
+silver_financial_facts = facts_valid.dropDuplicates(
+    ["cik", "accession", "taxonomy", "concept", "unit", "period_start", "period_end"]
 )
 
 (
@@ -195,6 +228,15 @@ silver_financial_facts = (
     .partitionBy("fiscal_year", "fiscal_quarter")
     .saveAsTable(T("silver_financial_facts"))
 )
+facts_quarantine.write.format("delta").mode("overwrite").option(
+    "overwriteSchema", "true"
+).saveAsTable(T("quarantine_financial_facts"))
+DQ_METRICS.append(dict(
+    table_name="silver_financial_facts",
+    rows_out=spark.table(T("silver_financial_facts")).count(),
+    rows_quarantined=facts_quarantine.count(),
+    duplicates_removed=facts_valid_n - spark.table(T("silver_financial_facts")).count(),
+))
 try:
     spark.sql(f"OPTIMIZE {T('silver_financial_facts')} ZORDER BY (cik, concept)")
 except Exception as exc:
@@ -364,9 +406,24 @@ print("silver_filing_text_chunks:", spark.table(T("silver_filing_text_chunks")).
 
 # COMMAND ----------
 
+from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType
+
+_DQ_SCHEMA = StructType([
+    StructField("run_ts", TimestampType()), StructField("table_name", StringType()),
+    StructField("rows_out", LongType()), StructField("rows_quarantined", LongType()),
+    StructField("duplicates_removed", LongType()),
+])
+_run_ts = dt.datetime.utcnow()
+spark.createDataFrame(
+    [dict(run_ts=_run_ts, **m) for m in DQ_METRICS], schema=_DQ_SCHEMA
+).write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable(
+    T("dq_silver_run_metrics")
+)
+
 dbutils.notebook.exit(
     json.dumps({
         "status": "ok",
+        "dq": DQ_METRICS,
         "silver_companies": spark.table(T("silver_companies")).count(),
         "silver_filings": spark.table(T("silver_filings")).count(),
         "silver_financial_facts": spark.table(T("silver_financial_facts")).count(),

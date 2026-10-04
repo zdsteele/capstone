@@ -124,6 +124,61 @@ def test_parse_submission_documents():
     assert docs[0]["filename"] == "a.htm"
 
 
+def _13dg(heading_block: str) -> str:
+    return f"<html><body>{heading_block}\n\nCUSIP No. 037833100\n\n2. CHECK BOX\n</body></html>"
+
+
+def test_parse_13dg_wrapped_person_heading():
+    doc = _13dg("NAME OF\nREPORTING PERSON\n\nWarren E. Buffett\n\n2.")
+    assert ep.parse_13dg_cover(doc)["filer_name"] == "Warren E. Buffett"
+
+
+def test_parse_13dg_ss_or_irs_variant_skips_label():
+    doc = _13dg(
+        "NAMES OF REPORTING PERSONS\n\nS.S.\nOR I.R.S. IDENTIFICATION NO. OF ABOVE PERSON\n\n"
+        "The\nVanguard Group - 23-1945930\n\n2."
+    )
+    assert ep.parse_13dg_cover(doc)["filer_name"] == "The Vanguard Group"
+
+
+def test_parse_13dg_joins_hard_wrapped_name():
+    doc = _13dg("NAME OF\nREPORTING PERSON\n\nJeffrey P.\nBezos\n\n2.")
+    assert ep.parse_13dg_cover(doc)["filer_name"] == "Jeffrey P. Bezos"
+
+
+def test_parse_13dg_legacy_item1_format_does_not_join_item2():
+    txt = "#88160R101\nItem 1: Reporting Person - FMR LLC\nItem 2: (a)  [ ]\nItem 4: Delaware\n"
+    assert ep.parse_13dg_cover(txt)["filer_name"] == "FMR LLC"
+
+
+def test_parse_13dg_rejects_irs_boilerplate():
+    doc = _13dg("NAME OF REPORTING PERSON\n\nI.R.S. IDENTIFICATION\nNO. OF ABOVE PERSONS\n\n2.")
+    assert ep.parse_13dg_cover(doc)["filer_name"] is None
+
+
+def test_sec_client_retries_on_429_then_succeeds():
+    from lib.sec_client import SecClient
+
+    class _Resp:
+        def __init__(self, status, body=b""):
+            self.status_code = status
+            self.headers = {}
+            self.content = body
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(self.status_code)
+
+    responses = [_Resp(429), _Resp(503), _Resp(200, b"ok")]
+    client = SecClient(
+        user_agent="Test Person test@example.com", requests_per_second=1000.0,
+        backoff_base=0.001, backoff_cap=0.01,
+    )
+    client._session.get = lambda url, timeout: responses.pop(0)
+    assert client.get_bytes("https://example.test/x") == b"ok"
+    assert responses == []
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

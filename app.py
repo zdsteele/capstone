@@ -462,6 +462,24 @@ def api_health(cik):
     except Exception:
         insider = []
     try:
+        inst = warehouse.query(
+            f"""SELECT manager_name, value_usd, pct_change, status, period_of_report
+                FROM {T('gold_institutional_ownership')} WHERE cik = ?
+                ORDER BY value_usd DESC NULLS LAST LIMIT 10""",
+            [cik],
+        )
+    except Exception:
+        inst = []
+    try:
+        benef = warehouse.query(
+            f"""SELECT filer_name, is_activist, pct_of_class, pct_change_vs_prior, filing_date
+                FROM {T('gold_beneficial_ownership')} WHERE cik = ?
+                ORDER BY pct_of_class DESC NULLS LAST LIMIT 10""",
+            [cik],
+        )
+    except Exception:
+        benef = []
+    try:
         profile = warehouse.query(
             f"SELECT * EXCEPT (cik, model, generated_at) FROM {T('gold_business_profile')} WHERE cik = ?",
             [cik],
@@ -493,6 +511,8 @@ def api_health(cik):
         "valuation": val[0] if val else None,
         "governance": gov[0] if gov else None,
         "insider": insider[0] if insider else None,
+        "institutional": inst,
+        "beneficial_ownership": benef,
         "profile": profile[0] if profile else None,
         "events": events,
         "briefing": briefing[0] if briefing else None,

@@ -98,6 +98,26 @@ out_schema = StructType(
 )
 
 
+_REQUIRED_BAR_COLS = {"Open", "High", "Low", "Close", "Volume"}
+
+
+def _history_with_retry(yf, ticker, period, attempts=4):
+    """yfinance rate-limits and transiently returns empty frames — retry with
+    jittered exponential backoff before giving up on a ticker."""
+    import random
+    import time
+
+    for attempt in range(attempts):
+        try:
+            hist = yf.Ticker(ticker).history(period=period, interval="1d")
+            if hist is not None and not hist.empty:
+                return hist
+        except Exception:
+            pass
+        time.sleep(min(30.0, 2.0 ** attempt) + random.random())
+    return None
+
+
 def fetch_bars(iterator):
     import pandas as pd
     import yfinance as yf
@@ -105,14 +125,12 @@ def fetch_bars(iterator):
     for pdf in iterator:
         frames = []
         for _, row in pdf.iterrows():
-            try:
-                hist = yf.Ticker(row["ticker"]).history(
-                    period=row["period"], interval="1d"
-                )
-            except Exception:
+            hist = _history_with_retry(yf, row["ticker"], row["period"])
+            if hist is None:
                 continue
-            if hist is None or hist.empty:
+            if not _REQUIRED_BAR_COLS.issubset(hist.columns):
                 continue
+            hist = hist.dropna(subset=["Close"])
             hist = hist.reset_index().rename(
                 columns={
                     "Date": "bar_date", "Open": "open", "High": "high",

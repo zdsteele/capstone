@@ -471,6 +471,92 @@ def build_tools(ctx: ToolContext) -> list:
             )
 
     @tool
+    def get_institutional_ownership(company: str, top_n: int = 15) -> str:
+        """Who owns how much of a company and how that's changing (analyst spec
+        §12): top 13F institutional holders by position value with
+        quarter-over-quarter new/increased/decreased/exited status, plus any
+        13D/13G 5%+ beneficial-owner stakes (with an activist-vs-passive flag
+        from the filing type — 13D signals activist intent, 13G is passive).
+        Use for 'who owns', 'institutional ownership', 'is <manager> buying or
+        selling', '13F', '13D', '13G' questions."""
+        with record_action(
+            ctx, "get_institutional_ownership", "retrieval",
+            {"company": company, "top_n": top_n},
+        ) as rec:
+            cik = _resolve_cik(company)
+            if not cik:
+                return f"Could not resolve company '{company}'."
+            holders_13f = _wq(
+                f"""SELECT manager_name, value_usd, shares, pct_change, status, period_of_report
+                    FROM {T('gold_institutional_ownership')}
+                    WHERE cik = ? ORDER BY value_usd DESC NULLS LAST LIMIT {min(int(top_n), 50)}""",
+                [cik],
+            )
+            stakes_13dg = _wq(
+                f"""SELECT filer_name, is_activist, pct_of_class, pct_change_vs_prior,
+                           shares_beneficially_owned, filing_date, form
+                    FROM {T('gold_beneficial_ownership')}
+                    WHERE cik = ? ORDER BY pct_of_class DESC NULLS LAST LIMIT 20""",
+                [cik],
+            )
+            out = {"institutional_13f": holders_13f, "beneficial_13d_13g": stakes_13dg}
+            rec["result"] = out
+            if not holders_13f and not stakes_13dg:
+                return (f"No institutional/beneficial ownership data for {company} "
+                         "(run notebooks 15-17).")
+            return json.dumps(out, default=str, indent=2)
+
+    @tool
+    def screen_institutional_ownership(
+        direction: str | None = None, company: str | None = None, limit: int = 15
+    ) -> str:
+        """Screen institutional (13F) position changes. Two modes: give
+        `company` to see which MANAGERS changed their stake in that one name
+        (who's buying/selling THIS stock); omit it to rank ALL covered
+        companies by aggregate institutional buying/selling last quarter
+        (where is smart money moving). `direction`: new | increased |
+        decreased | exited. Omit for net $ moved."""
+        with record_action(
+            ctx, "screen_institutional_ownership", "retrieval",
+            {"direction": direction, "company": company, "limit": limit},
+        ) as rec:
+            lim = min(int(limit), 50)
+            if company:
+                cik = _resolve_cik(company)
+                if not cik:
+                    return f"Could not resolve company '{company}'."
+                where, params = ["cik = ?"], [cik]
+                if direction:
+                    where.append("lower(status) = ?")
+                    params.append(direction.strip().lower())
+                rows = _wq(
+                    f"""SELECT manager_name, value_usd, prior_value_usd, pct_change, status,
+                               period_of_report
+                        FROM {T('gold_institutional_ownership')}
+                        WHERE {' AND '.join(where)}
+                        ORDER BY abs(coalesce(value_change_usd, 0)) DESC LIMIT {lim}""",
+                    params,
+                )
+                rec["result"] = rows
+                return _rows_or_msg(rows, f"No institutional position changes for {company}.")
+            where, params = ["1=1"], []
+            if direction:
+                where.append("lower(status) = ?")
+                params.append(direction.strip().lower())
+            rows = _wq(
+                f"""SELECT ticker, name, sum(value_change_usd) AS net_value_change,
+                           count(*) AS n_managers
+                    FROM {T('gold_institutional_ownership')}
+                    WHERE {' AND '.join(where)} AND cik IS NOT NULL
+                    GROUP BY ticker, name ORDER BY net_value_change DESC NULLS LAST LIMIT {lim}""",
+                params,
+            )
+            rec["result"] = rows
+            return _rows_or_msg(
+                rows, "No institutional-ownership rollups yet (run notebooks 15-17)."
+            )
+
+    @tool
     def get_governance(company: str) -> str:
         """Executive compensation & board governance from the latest proxy
         (analyst spec §13): CEO/CFO total comp, whether pay is equity-heavy, the
@@ -766,15 +852,27 @@ def build_tools(ctx: ToolContext) -> list:
             return f"Updated research note {research_id}." if ok else f"No note {research_id} for this user."
 
     @tool
-    def remove_from_watchlist(company: str, watchlist_name: str = "My Watchlist") -> str:
-        """Remove a company (ticker or CIK) from one of the user's watchlists."""
+    def remove_from_watchlist(
+        company: str, watchlist_name: str = "My Watchlist", confirmed: bool = False
+    ) -> str:
+        """Remove a company (ticker or CIK) from one of the user's watchlists.
+        Deletion is two-step: call with confirmed=False first, show the user what
+        would be removed and ask them to confirm; call again with confirmed=True
+        only after the user explicitly says yes."""
         with record_action(
             ctx, "remove_from_watchlist", "write",
-            {"company": company, "watchlist_name": watchlist_name},
+            {"company": company, "watchlist_name": watchlist_name, "confirmed": confirmed},
         ) as rec:
             cik = _resolve_cik(company)
             if not cik:
                 return f"Could not resolve company '{company}'."
+            if not confirmed:
+                rec["result"] = {"awaiting_confirmation": True, "cik": cik}
+                return (
+                    f"Not removed yet. Ask the user to confirm removing {company} "
+                    f"(CIK {cik}) from '{watchlist_name}', then call this tool again "
+                    "with confirmed=True."
+                )
             n = lakebase.run_write(
                 """
                 DELETE FROM edgar.watchlist_companies wc
@@ -792,7 +890,8 @@ def build_tools(ctx: ToolContext) -> list:
         search_company, search_filings, get_filing, get_filing_intelligence,
         screen_companies, get_business_profile, get_8k_events, get_filing_changes,
         get_financial_ratios, get_valuation, get_insider_activity,
-        screen_insider_activity, get_governance,
+        screen_insider_activity, get_institutional_ownership,
+        screen_institutional_ownership, get_governance,
         get_company_health, get_financial_metric, compare_companies,
         search_filing_text, read_filing_section, get_saved_research,
         save_filing, save_company_to_watchlist, create_research_note,
