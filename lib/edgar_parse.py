@@ -437,6 +437,45 @@ def _num(s: str | None) -> float | None:
         return None
 
 
+def parse_13dg_schedule_xml(xml: str) -> list[dict] | None:
+    """Parse the structured XML of a post-2024 ``SCHEDULE 13D/13G`` filing
+    (the ``primary_doc.xml`` at the filing root). One dict per reporting person."""
+    import xml.etree.ElementTree as ET
+
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return None
+    cusip = None
+    for el in root.iter():
+        if _local(el.tag) == "issuerCusipNumber" and el.text:
+            cusip = el.text.strip()
+            break
+    people = []
+    for block in root.iter():
+        if _local(block.tag) != "coverPageHeaderReportingPersonDetails":
+            continue
+        vals = {}
+        for el in block.iter():
+            name = _local(el.tag)
+            if el.text and el.text.strip() and name not in vals:
+                vals[name] = el.text.strip()
+        if not vals.get("reportingPersonName"):
+            continue
+        people.append({
+            "cusip": cusip,
+            "filer_name": vals.get("reportingPersonName"),
+            "pct_of_class": _num(vals.get("classPercent")),
+            "shares_beneficially_owned": _num(vals.get("reportingPersonBeneficiallyOwnedAggregateNumberOfShares")),
+            "sole_voting_power": _num(vals.get("soleVotingPower")),
+            "shared_voting_power": _num(vals.get("sharedVotingPower")),
+            "sole_dispositive_power": _num(vals.get("soleDispositivePower")),
+            "shared_dispositive_power": _num(vals.get("sharedDispositivePower")),
+            "parse_method": "xml_schedule",
+        })
+    return people or None
+
+
 def parse_13dg_cover(doc: str, is_xml: bool = False) -> dict | None:
     """Best-effort parse of a Schedule 13D/13G cover page into
     ``{cusip, filer_name, pct_of_class, shares_beneficially_owned,

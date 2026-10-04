@@ -55,7 +55,12 @@ BATCH = int(dbutils.widgets.get("batch_size"))
 UA = dbutils.widgets.get("sec_user_agent")
 FULL = MODE == "full"
 T = lambda n: f"{CATALOG}.{SCHEMA}.{n}"
-FORMS = {"SC 13D", "SC 13D/A", "SC 13G", "SC 13G/A"}
+# Pre-Dec-2024 filings use "SC 13D/G"; EDGAR's structured Schedule 13D/G since
+# then uses "SCHEDULE 13D/G" (XML primary_doc.xml). Both must be ingested.
+FORMS = {
+    "SC 13D", "SC 13D/A", "SC 13G", "SC 13G/A",
+    "SCHEDULE 13D", "SCHEDULE 13D/A", "SCHEDULE 13G", "SCHEDULE 13G/A",
+}
 
 from pyspark.sql import functions as F, Window
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, BooleanType
@@ -154,6 +159,9 @@ for _i, co in enumerate(COMPANIES, 1):
         if new_here >= MAX_NEW:
             break
         primary = f.get("primaryDocument") or ""
+        is_schedule_xml = form.startswith("SCHEDULE")
+        if is_schedule_xml:
+            primary = "primary_doc.xml"
         if not primary:
             continue
         new_here += 1
@@ -168,24 +176,27 @@ for _i, co in enumerate(COMPANIES, 1):
             "raw_text": doc[:2_000_000],
             "ingested_at": dt.datetime.utcnow().isoformat(),
         })
-        parsed = edgar_parse.parse_13dg_cover(doc, is_xml=primary.lower().endswith(".xml"))
-        if not parsed:
-            continue
-        stake_rows.append({
-            "stake_id": accession,
-            "accession": accession, "cik": c10, "ticker": ticker, "form": form,
-            "filing_date": f.get("filingDate"), "event_date": f.get("filingDate"),
-            "filer_name": parsed["filer_name"], "filer_cik": None,
-            "cusip": parsed["cusip"], "pct_of_class": parsed["pct_of_class"],
-            "shares_beneficially_owned": parsed["shares_beneficially_owned"],
-            "sole_voting_power": parsed["sole_voting_power"],
-            "shared_voting_power": parsed["shared_voting_power"],
-            "sole_dispositive_power": parsed["sole_dispositive_power"],
-            "shared_dispositive_power": parsed["shared_dispositive_power"],
-            "is_activist": form.startswith("SC 13D"),
-            "parse_method": parsed["parse_method"],
-            "ingested_at": dt.datetime.utcnow().isoformat(),
-        })
+        if is_schedule_xml:
+            people = edgar_parse.parse_13dg_schedule_xml(doc) or []
+        else:
+            single = edgar_parse.parse_13dg_cover(doc, is_xml=primary.lower().endswith(".xml"))
+            people = [single] if single else []
+        for i, parsed in enumerate(people):
+            stake_rows.append({
+                "stake_id": f"{accession}::{i}",
+                "accession": accession, "cik": c10, "ticker": ticker, "form": form,
+                "filing_date": f.get("filingDate"), "event_date": f.get("filingDate"),
+                "filer_name": parsed["filer_name"], "filer_cik": None,
+                "cusip": parsed["cusip"], "pct_of_class": parsed["pct_of_class"],
+                "shares_beneficially_owned": parsed["shares_beneficially_owned"],
+                "sole_voting_power": parsed["sole_voting_power"],
+                "shared_voting_power": parsed["shared_voting_power"],
+                "sole_dispositive_power": parsed["sole_dispositive_power"],
+                "shared_dispositive_power": parsed["shared_dispositive_power"],
+                "is_activist": "13D" in form,
+                "parse_method": parsed["parse_method"],
+                "ingested_at": dt.datetime.utcnow().isoformat(),
+            })
     if _i % BATCH == 0:
         _flush()
         print(f"  {_i}/{len(COMPANIES)}  (+{merged['silver_beneficial_ownership_stakes']} stakes, "
