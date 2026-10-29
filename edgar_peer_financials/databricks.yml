@@ -1,0 +1,34 @@
+# https://docs.databricks.com/en/dev-tools/bundles/settings.html
+bundle:
+  name: edgar_peer_financials
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog this project's job reads/writes, per environment.
+  bronze_schema:
+    description: Raw SEC payloads, filing index, earnings-release text + the raw_edgar Volume.
+    default: bronze_edgar
+  silver_schema:
+    description: Parsed facts, Adj. EBITDA extraction, LTM metrics.
+    default: silver_edgar
+  gold_schema:
+    description: The three Bloomberg peer tables + reconciliation.
+    default: gold_edgar
+  llm_endpoint:
+    description: Model serving endpoint ai_query uses to read Adj. EBITDA from earnings releases.
+    default: databricks-claude-sonnet-5-5
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://adb-7731096358594475.15.azuredatabricks.net
+    variables:
+      catalog: engineering_playground_dev
+    permissions:
+      - group_name: "data-tech-admins"
+        level: "CAN_MANAGE"

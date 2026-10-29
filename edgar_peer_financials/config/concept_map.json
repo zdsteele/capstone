@@ -1,0 +1,304 @@
+{
+  "_comment": [
+    "metric -> ordered candidates (index = priority). The LTM is built per candidate; the first candidate with a complete LTM wins.",
+    "A candidate is 'prefix:Name' (the consolidated, no-dimension fact), 'prefix:Name[axis=member;axis=member]' (that exact dimension set), or 'A+B' (sum; every term must exist).",
+    "kind: flow = duration fact (LTM built from FY + YTD - prior YTD); instant = balance-sheet fact at the period end.",
+    "unit: USD | USD/shares | shares. 'overrides' are per-ticker lists tried BEFORE the defaults; [] switches the metric off for that ticker.",
+    "Add an override when gold_bloomberg_reconciliation shows a miss; silver_ltm_lineage shows which candidate was used."
+  ],
+  "metrics": {
+    "revenue": {
+      "kind": "flow",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:Revenues",
+        "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax",
+        "us-gaap:RevenueFromContractWithCustomerIncludingAssessedTax",
+        "us-gaap:SalesRevenueNet"
+      ]
+    },
+    "operating_income": {
+      "kind": "flow",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:OperatingIncomeLoss"
+      ]
+    },
+    "pretax_income": {
+      "kind": "flow",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"
+      ]
+    },
+    "income_tax": {
+      "kind": "flow",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:IncomeTaxExpenseBenefit"
+      ]
+    },
+    "net_income": {
+      "kind": "flow",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:NetIncomeLoss",
+        "us-gaap:NetIncomeLossAvailableToCommonStockholdersBasic",
+        "us-gaap:ProfitLoss"
+      ]
+    },
+    "depreciation_amortization": {
+      "kind": "flow",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:DepreciationDepletionAndAmortization",
+        "us-gaap:DepreciationAmortizationAndAccretionNet",
+        "us-gaap:DepreciationAndAmortization",
+        "us-gaap:CostDepreciationAmortizationAndDepletion",
+        "us-gaap:Depreciation"
+      ]
+    },
+    "interest_expense": {
+      "kind": "flow",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:InterestExpense",
+        "us-gaap:InterestExpenseNonoperating",
+        "us-gaap:InterestExpenseDebt",
+        "us-gaap:InterestAndDebtExpense",
+        "us-gaap:InterestIncomeExpenseNonoperatingNet",
+        "us-gaap:InterestIncomeExpenseNet"
+      ]
+    },
+    "operating_cash_flow": {
+      "kind": "flow",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:NetCashProvidedByUsedInOperatingActivities",
+        "us-gaap:NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"
+      ]
+    },
+    "capital_expenditures": {
+      "kind": "flow",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment",
+        "us-gaap:PaymentsToAcquireProductiveAssets",
+        "us-gaap:PaymentsToAcquireOtherPropertyPlantAndEquipment"
+      ]
+    },
+    "eps_diluted": {
+      "kind": "flow",
+      "unit": "USD/shares",
+      "concepts": [
+        "us-gaap:EarningsPerShareDiluted",
+        "us-gaap:NetIncomeLossNetOfTaxPerOutstandingLimitedPartnershipUnitDiluted",
+        "us-gaap:NetIncomeLossPerOutstandingLimitedPartnershipUnitDiluted",
+        "us-gaap:EarningsPerShareBasicAndDiluted",
+        "us-gaap:EarningsPerShareDiluted[us-gaap:StatementClassOfStockAxis=us-gaap:CommonClassAMember]"
+      ]
+    },
+    "diluted_shares": {
+      "kind": "flow",
+      "unit": "shares",
+      "concepts": [
+        "us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding",
+        "us-gaap:WeightedAverageLimitedPartnershipUnitsOutstandingDiluted",
+        "us-gaap:WeightedAverageNumberOfShareOutstandingBasicAndDiluted",
+        "us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding[us-gaap:StatementClassOfStockAxis=us-gaap:CommonClassAMember]"
+      ]
+    },
+    "basic_shares": {
+      "kind": "flow",
+      "unit": "shares",
+      "concepts": [
+        "us-gaap:WeightedAverageNumberOfSharesOutstandingBasic",
+        "us-gaap:WeightedAverageLimitedPartnershipUnitsOutstanding",
+        "us-gaap:WeightedAverageNumberOfShareOutstandingBasicAndDiluted",
+        "us-gaap:WeightedAverageNumberOfSharesOutstandingBasic[us-gaap:StatementClassOfStockAxis=us-gaap:CommonClassAMember]"
+      ]
+    },
+    "cash": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:CashAndCashEquivalentsAtCarryingValue",
+        "us-gaap:Cash",
+        "us-gaap:CashEquivalentsAtCarryingValue",
+        "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"
+      ]
+    },
+    "short_term_investments": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:ShortTermInvestments",
+        "us-gaap:MarketableSecuritiesCurrent",
+        "us-gaap:AvailableForSaleSecuritiesDebtSecuritiesCurrent"
+      ]
+    },
+    "short_term_borrowings": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:ShortTermBorrowings"
+      ]
+    },
+    "commercial_paper": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:CommercialPaper"
+      ]
+    },
+    "debt_current": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:LongTermDebtCurrent",
+        "us-gaap:LongTermDebtAndCapitalLeaseObligationsCurrent",
+        "us-gaap:DebtCurrent",
+        "us-gaap:NotesPayableCurrent"
+      ]
+    },
+    "debt_noncurrent": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:LongTermDebtNoncurrent",
+        "us-gaap:LongTermDebtAndCapitalLeaseObligations",
+        "us-gaap:LongTermDebtExcludingCurrentMaturities",
+        "us-gaap:LongTermNotesPayable"
+      ]
+    },
+    "debt_total_fallback": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:LongTermDebt",
+        "us-gaap:DebtInstrumentCarryingAmount"
+      ]
+    },
+    "other_debt": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": []
+    },
+    "finance_lease": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:FinanceLeaseLiability"
+      ]
+    },
+    "finance_lease_current": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:FinanceLeaseLiabilityCurrent"
+      ]
+    },
+    "finance_lease_noncurrent": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:FinanceLeaseLiabilityNoncurrent"
+      ]
+    },
+    "operating_lease": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:OperatingLeaseLiability"
+      ]
+    },
+    "operating_lease_current": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:OperatingLeaseLiabilityCurrent"
+      ]
+    },
+    "operating_lease_noncurrent": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:OperatingLeaseLiabilityNoncurrent"
+      ]
+    },
+    "total_assets": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:Assets"
+      ]
+    },
+    "total_equity": {
+      "kind": "instant",
+      "unit": "USD",
+      "concepts": [
+        "us-gaap:StockholdersEquity",
+        "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+        "us-gaap:LimitedPartnersCapitalAccount",
+        "us-gaap:PartnersCapital"
+      ]
+    }
+  },
+  "overrides": {
+    "AESI": {
+      "depreciation_amortization": [
+        "us-gaap:DepreciationDepletionAndAmortization+us-gaap:AmortizationOfIntangibleAssets"
+      ]
+    },
+    "CAT": {
+      "short_term_borrowings": [
+        "us-gaap:ShortTermBorrowings[srt:ProductOrServiceAxis=cat:FinancialProductsMember]"
+      ],
+      "debt_current": [
+        "us-gaap:LongTermDebtAndCapitalLeaseObligationsCurrent[srt:ProductOrServiceAxis=cat:FinancialProductsMember]+us-gaap:LongTermDebtAndCapitalLeaseObligationsCurrent[srt:ProductOrServiceAxis=cat:MachineryPowerEnergyMember]"
+      ],
+      "debt_noncurrent": [
+        "us-gaap:LongTermDebtAndCapitalLeaseObligations[srt:ProductOrServiceAxis=cat:FinancialProductsMember]+us-gaap:LongTermDebtAndCapitalLeaseObligations[srt:ProductOrServiceAxis=cat:MachineryPowerEnergyMember]"
+      ]
+    },
+    "GEV": {
+      "depreciation_amortization": [
+        "gev:DepreciationDepletionAndAmortizationIncludingImpairments"
+      ],
+      "finance_lease": [],
+      "finance_lease_current": [],
+      "finance_lease_noncurrent": []
+    },
+    "PTEN": {
+      "depreciation_amortization": [
+        "pten:DepreciationDepletionAmortizationAndImpairment"
+      ]
+    },
+    "SEI": {
+      "other_debt": [
+        "us-gaap:ConvertibleDebt"
+      ]
+    },
+    "SLB": {
+      "debt_current": [
+        "slb:ShortTermBorrowingsAndLongTermDebtCurrent"
+      ]
+    },
+    "USAC": {
+      "total_equity": [
+        "us-gaap:LimitedPartnersCapitalAccount"
+      ]
+    },
+    "VST": {
+      "depreciation_amortization": [
+        "us-gaap:DepreciationAmortizationAndAccretionNet"
+      ]
+    },
+    "WHD": {
+      "capital_expenditures": [
+        "whd:PaymentsForCapitalExpenditures"
+      ]
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "_comment": "Peer universe for the Bloomberg peer tables. CIKs are pinned (verified against https://www.sec.gov/files/company_tickers.json on 2026-10-29). GTLS was acquired by Baker Hughes in July 2026 and has left the ticker map; its CIK still serves its historical filings.",
+  "companies": [
+    {"ticker": "AMRC", "bloomberg_ticker": "AMRC US Equity", "cik": "0001488139", "name": "Ameresco Inc."},
+    {"ticker": "BE",   "bloomberg_ticker": "BE US Equity",   "cik": "0001664703", "name": "Bloom Energy Corp."},
+    {"ticker": "CAT",  "bloomberg_ticker": "CAT US Equity",  "cik": "0000018230", "name": "Caterpillar Inc."},
+    {"ticker": "CMI",  "bloomberg_ticker": "CMI US Equity",  "cik": "0000026172", "name": "Cummins Inc."},
+    {"ticker": "GNRC", "bloomberg_ticker": "GNRC US Equity", "cik": "0001474735", "name": "Generac Holdings Inc."},
+    {"ticker": "AESI", "bloomberg_ticker": "AESI US Equity", "cik": "0001984060", "name": "Atlas Energy Solutions Inc."},
+    {"ticker": "SEI",  "bloomberg_ticker": "SEI US Equity",  "cik": "0001697500", "name": "Solaris Energy Infrastructure Inc."},
+    {"ticker": "BKR",  "bloomberg_ticker": "BKR US Equity",  "cik": "0001701605", "name": "Baker Hughes Co."},
+    {"ticker": "GTLS", "bloomberg_ticker": "GTLS US Equity", "cik": "0000892553", "name": "Chart Industries Inc."},
+    {"ticker": "WHD",  "bloomberg_ticker": "WHD US Equity",  "cik": "0001699136", "name": "Cactus Inc."},
+    {"ticker": "SLB",  "bloomberg_ticker": "SLB US Equity",  "cik": "0000087347", "name": "SLB Ltd."},
+    {"ticker": "FLOC", "bloomberg_ticker": "FLOC US Equity", "cik": "0002035149", "name": "Flowco Holdings Inc."},
+    {"ticker": "AROC", "bloomberg_ticker": "AROC US Equity", "cik": "0001389050", "name": "Archrock Inc."},
+    {"ticker": "KGS",  "bloomberg_ticker": "KGS US Equity",  "cik": "0001767042", "name": "Kodiak Gas Services Inc."},
+    {"ticker": "USAC", "bloomberg_ticker": "USAC US Equity", "cik": "0001522727", "name": "USA Compression Partners LP"},
+    {"ticker": "LBRT", "bloomberg_ticker": "LBRT US Equity", "cik": "0001694028", "name": "Liberty Energy Inc."},
+    {"ticker": "ACDC", "bloomberg_ticker": "ACDC US Equity", "cik": "0001881487", "name": "ProFrac Holding Corp."},
+    {"ticker": "PUMP", "bloomberg_ticker": "PUMP US Equity", "cik": "0001680247", "name": "ProPetro Holding Corp."},
+    {"ticker": "PTEN", "bloomberg_ticker": "PTEN US Equity", "cik": "0000889900", "name": "Patterson-UTI Energy Inc."},
+    {"ticker": "RES",  "bloomberg_ticker": "RES US Equity",  "cik": "0000742278", "name": "RPC, Inc."},
+    {"ticker": "GEV",  "bloomberg_ticker": "GEV US Equity",  "cik": "0001996810", "name": "GE Vernova Inc."},
+    {"ticker": "CEG",  "bloomberg_ticker": "CEG US Equity",  "cik": "0001868275", "name": "Constellation Energy Corp."},
+    {"ticker": "VST",  "bloomberg_ticker": "VST US Equity",  "cik": "0001692819", "name": "Vistra Corp."}
+  ]
+}
